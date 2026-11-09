@@ -3,6 +3,8 @@
 .uv-cache/
 data/
 models/
+asistan/*
+!asistan/ASISTAN.md
 .pw-browsers/
 __pycache__/
 *.log
