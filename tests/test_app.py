@@ -118,6 +118,17 @@ def test_tool_only_turn_still_ends(client, fake_bridge):
     assert msgs[-1] == {"type": "turn_end", "error": False}
 
 
+def test_text_around_a_tool_is_kept_apart(client, fake_bridge):
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "say", "text": "hatırlat"})
+        read_until(ws, "user_text")
+        fake_bridge.push(TextDelta("Kuruyorum."), ToolUse("Bash", "reminder.py add"),
+                         TextDelta("Kurdum"), TurnResult("s1", False))
+        msgs = read_until(ws, "turn_end")
+    assert [m["text"] for m in msgs if m["type"] == "sentence"] == ["Kuruyorum.", "Kurdum"]
+    assert "".join(m["text"] for m in msgs if m["type"] == "text") == "Kuruyorum.\nKurdum"
+
+
 def test_second_tab_replaces_first(client):
     with client.websocket_connect("/ws") as a:
         with client.websocket_connect("/ws"):

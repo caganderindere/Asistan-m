@@ -49,7 +49,9 @@ class ClaudeBridge:
         workdir: str,
         store: SessionStore,
         command_factory: Callable[[str | None], list[str]],
+        on_spawn: Callable[[int], None] | None = None,
     ) -> None:
+        self._on_spawn = on_spawn
         self._workdir = workdir
         self._store = store
         self._command_factory = command_factory
@@ -71,6 +73,8 @@ class ClaudeBridge:
             stderr=asyncio.subprocess.PIPE,
             limit=LINE_LIMIT,
         )
+        if self._on_spawn is not None:
+            self._on_spawn(self._proc.pid)
         self._reader = asyncio.create_task(self._read(self._proc))
         asyncio.create_task(self._drain_stderr(self._proc))
 

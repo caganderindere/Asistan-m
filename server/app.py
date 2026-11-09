@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import contextlib
 import datetime
 import logging
 import shutil
+import socket
+import threading
+import time
+import webbrowser
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -58,18 +63,25 @@ def create_app(
 
     async def pump() -> None:
         splitter = SentenceSplitter()
+        # Text written before and after a tool call comes as separate messages
+        # with nothing between them; a line break keeps "kuruyorum.Kurdum" apart.
+        text_seen = after_tool = False
         async for event in bridge.events():
             if isinstance(event, TextDelta):
-                await clients.send({"type": "text", "text": event.text})
-                for sentence in splitter.feed(event.text):
+                text = f"\n{event.text}" if text_seen and after_tool else event.text
+                text_seen, after_tool = True, False
+                await clients.send({"type": "text", "text": text})
+                for sentence in splitter.feed(text):
                     await clients.send({"type": "sentence", "text": sentence})
             elif isinstance(event, ToolUse):
+                after_tool = True
                 await clients.send({"type": "tool", "name": event.name, "summary": event.summary})
             elif isinstance(event, TurnResult):
                 for sentence in splitter.flush():
                     await clients.send({"type": "sentence", "text": sentence})
                 await clients.send({"type": "turn_end", "error": event.is_error})
                 splitter = SentenceSplitter()
+                text_seen = after_tool = False
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -166,7 +178,20 @@ def create_app(
     return app
 
 
-def main() -> None:
+def _port_in_use(port: int) -> bool:
+    with socket.socket() as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _open_when_ready(server, url: str) -> None:
+    for _ in range(1200):
+        if server.started:
+            webbrowser.open(url)
+            return
+        time.sleep(0.1)
+
+
+def main(argv: list[str] | None = None) -> None:
     import uvicorn
 
     from server.claude_bridge import ClaudeBridge, build_command
@@ -174,18 +199,36 @@ def main() -> None:
     from server.session_store import SessionStore
     from server.stt import Transcriber
     from server.tts import synthesize
+    from server.winjob import kill_with_me
+
+    parser = argparse.ArgumentParser(prog="server.app")
+    parser.add_argument("--open", action="store_true", help="open the browser once the server is up")
+    args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO)
     config = load_config(ROOT / "config.json")
+    url = f"http://127.0.0.1:{config.port}"
+    if _port_in_use(config.port):
+        # Already running (e.g. the shortcut was double-clicked twice).
+        if args.open:
+            webbrowser.open(url)
+        return
+
     claude_exe = shutil.which("claude") or "claude"
     bridge = ClaudeBridge(
         config.workdir,
         SessionStore(ROOT / "data" / "session.json"),
         lambda session_id: build_command(claude_exe, session_id),
+        on_spawn=kill_with_me,
     )
+    print("Ses tanıma modeli yükleniyor…", flush=True)
     transcriber = Transcriber(config.whisper_model, config.vocabulary)
     app = create_app(config, bridge, transcriber, synthesize)
-    uvicorn.run(app, host="127.0.0.1", port=config.port)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))
+    if args.open:
+        threading.Thread(target=_open_when_ready, args=(server, url), daemon=True).start()
+    print(f"Claude Ses hazırlanıyor: {url} — kapatmak için bu pencereyi kapatın.", flush=True)
+    server.run()
 
 
 if __name__ == "__main__":

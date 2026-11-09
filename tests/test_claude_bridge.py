@@ -124,6 +124,18 @@ async def test_new_session_forgets_id(bridge, store, args_log):
     assert "--resume" not in last_command_args(args_log)
 
 
+async def test_every_spawn_is_reported(tmp_path, store, args_log):
+    spawned = []
+    b = ClaudeBridge(str(tmp_path), store, factory(), on_spawn=spawned.append)
+    await b.start()
+    await b.send("öl")
+    await collect_until_result(b)
+    await b.send("tekrar")
+    await collect_until_result(b)
+    await b.close()
+    assert len(spawned) == 2 and all(isinstance(pid, int) for pid in spawned)
+
+
 def test_child_env_strips_nesting():
     env = child_env({"CLAUDECODE": "1", "CLAUDE_CODE_ENTRYPOINT": "cli", "PATH": "x"})
     assert "CLAUDECODE" not in env and "CLAUDE_CODE_ENTRYPOINT" not in env
