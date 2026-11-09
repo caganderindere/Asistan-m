@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Ses</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="workdir" id="workdir">D:\</span>
+    <span class="conn" id="conn" data-state="connecting">Bağlanıyor…</span>
+    <button class="ghost" id="newSession" type="button">Yeni konuşma</button>
+  </header>
+
+  <main class="stage">
+    <button class="orb" id="orb" type="button" data-state="idle" aria-label="Sesli konuşmayı başlat">
+      <span class="orb-core"></span>
+    </button>
+    <p class="status" id="status" aria-live="polite">Başlamak için küreye dokun</p>
+    <p class="tool-line" id="toolLine"></p>
+    <p class="notice" id="notice" hidden></p>
+    <button class="stop" id="stop" type="button">Dur <kbd>Esc</kbd></button>
+  </main>
+
+  <section class="history" id="history" aria-label="Konuşma geçmişi"></section>
+
+  <template id="turnTemplate">
+    <article class="turn">
+      <p class="you"></p>
+      <p class="reply"></p>
+      <details class="ops" hidden>
+        <summary></summary>
+        <ol></ol>
+      </details>
+    </article>
+  </template>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

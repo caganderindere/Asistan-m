@@ -1,4 +1,6 @@
 .superpowers/
+.claude-flow/
+.swarm/
 .venv/
 .uv-cache/
 data/

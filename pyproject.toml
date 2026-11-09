@@ -6,6 +6,8 @@ requires-python = ">=3.13"
 dependencies = [
     "fastapi",
     "uvicorn",
+    # uvicorn answers WebSocket upgrades with 404 unless a WebSocket library is installed.
+    "websockets",
     "faster-whisper",
     # faster-whisper passes metadata_errors to av.open(), which PyAV 19 removed.
     "av<19",
