@@ -299,7 +299,7 @@ def test_tts_failure_is_502(client, failing_synth):        # → 502
 
 **Files:**
 - Create: `asistan/ASISTAN.md`, `asistan/gorevler.md`, `asistan/takvim.md`, `asistan/notlar.md`, `assistant/__init__.py`, `assistant/reminders.py`, `tools/reminder.py`, `tools/remind.py`, `tests/test_reminders.py`
-- Modify: `.gitignore` — `asistan/hatirlatmalar.json` eklenir (kişisel veri; diğer asistan dosyaları da `asistan/*.md` hariç `ASISTAN.md` ignore edilir)
+- Modify: `.gitignore` — kişisel veri depoya girmesin: `asistan/*` ve `!asistan/ASISTAN.md` satırları eklenir (yalnızca talimat dosyası izlenir; görev, takvim, not ve hatırlatma dosyaları ilk çalıştırmada boş oluşturulur)
 
 **Interfaces:**
 - Consumes: Task 4 `synthesize(text, voice)`; Task 1 `load_config`.
