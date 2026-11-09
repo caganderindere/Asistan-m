@@ -1,0 +1,28 @@
+[project]
+name = "claude-ses"
+version = "0.1.0"
+description = "Claude Code üzerinde kurulu, Türkçe sesli kişisel asistan"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "faster-whisper",
+    "edge-tts",
+    "soundfile",
+    "numpy",
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12==9.*",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "httpx", "playwright"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = '-m "not network and not gpu and not e2e"'
+markers = [
+    "network: uses the Edge TTS service",
+    "gpu: loads the real Whisper model",
+    "e2e: drives the real app in a browser",
+]
