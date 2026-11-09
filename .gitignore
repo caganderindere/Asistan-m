@@ -1,0 +1,6 @@
+.superpowers/
+.venv/
+.uv-cache/
+data/
+__pycache__/
+*.log
