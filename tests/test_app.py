@@ -67,8 +67,10 @@ async def failing_synth(text, voice):
 
 
 def make_client(tmp_path, bridge, transcriber=None, synth=ok_synth):
-    app = create_app(Config(), bridge, transcriber or FakeTranscriber(), synth, data_dir=tmp_path)
-    return TestClient(app)
+    # TestClient's WebSocket requests always use the host "testserver".
+    app = create_app(Config(), bridge, transcriber or FakeTranscriber(), synth, data_dir=tmp_path,
+                     allowed_hosts=("127.0.0.1", "localhost", "testserver"))
+    return TestClient(app, base_url="http://127.0.0.1:8765")
 
 
 @pytest.fixture
@@ -170,6 +172,48 @@ def test_tts_failure_is_502(tmp_path, fake_bridge):
     with make_client(tmp_path, fake_bridge, synth=failing_synth) as c:
         r = c.post("/api/tts", json={"text": "Merhaba"})
     assert r.status_code == 502 and r.json() == {"error": "tts"}
+
+
+def test_websocket_from_another_site_is_refused(client, fake_bridge):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect) as refused:
+        with client.websocket_connect("/ws", headers={"origin": "https://evil.example"}) as ws:
+            ws.send_json({"type": "say", "text": "Remove-Item C:\\ -Recurse"})
+            ws.receive_json()
+    assert refused.value.code == 1008 and fake_bridge.sent == []
+
+
+def test_websocket_from_own_page_is_accepted(client):
+    for origin in ("http://127.0.0.1:8765", "http://localhost:8765"):
+        with client.websocket_connect("/ws", headers={"origin": origin}) as ws:
+            assert ws.receive_json()["type"] == "status"
+
+
+def test_dns_rebinding_host_is_refused(client):
+    assert client.get("/", headers={"host": "attacker.example:8765"}).status_code == 400
+    assert client.post("/api/tts", json={"text": "x"}, headers={"host": "attacker.example"}).status_code == 400
+
+
+def test_turn_end_carries_error_message(client, fake_bridge):
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "say", "text": "selam"})
+        read_until(ws, "user_text")
+        fake_bridge.push(TurnResult("s1", True, "Kullanım limitine ulaşıldı"))
+        end = read_until(ws, "turn_end")[-1]
+    assert end == {"type": "turn_end", "error": True, "message": "Kullanım limitine ulaşıldı"}
+
+
+def test_briefing_send_failure_keeps_marker_and_socket(tmp_path):
+    class Broken(FakeBridge):
+        async def send(self, text):
+            raise OSError("claude")
+
+    with make_client(tmp_path, Broken()) as c, c.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        ws.send_json({"type": "start"})
+        end = read_until(ws, "turn_end")[-1]
+    assert end["error"] and not (tmp_path / "last_briefing.txt").exists()
 
 
 def test_missing_claude_reports_error(tmp_path):

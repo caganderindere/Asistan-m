@@ -18,6 +18,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from server.claude_events import TextDelta, ToolUse, TurnResult
 from server.config import ROOT, Config
@@ -27,6 +28,7 @@ from server.stt import is_meaningful
 logger = logging.getLogger(__name__)
 
 BRIEFING_PROMPT = "Günün planını kısaca özetle."
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
 CLAUDE_MISSING = (
     "Claude Code bulunamadı ya da giriş yapılmamış. Bir terminalde 'claude' yazıp giriş yapın."
 )
@@ -57,6 +59,7 @@ def create_app(
     synth: Synth,
     data_dir: Path = ROOT / "data",
     web_dir: Path = ROOT / "web",
+    allowed_hosts: tuple[str, ...] = LOCAL_HOSTS,
 ) -> FastAPI:
     clients = _Clients()
     state = {"startup_error": ""}
@@ -79,7 +82,10 @@ def create_app(
             elif isinstance(event, TurnResult):
                 for sentence in splitter.flush():
                     await clients.send({"type": "sentence", "text": sentence})
-                await clients.send({"type": "turn_end", "error": event.is_error})
+                end = {"type": "turn_end", "error": event.is_error}
+                if event.message:
+                    end["message"] = event.message
+                await clients.send(end)
                 splitter = SentenceSplitter()
                 text_seen = after_tool = False
 
@@ -96,6 +102,9 @@ def create_app(
         await bridge.close()
 
     app = FastAPI(lifespan=lifespan)
+    # Rejects DNS-rebinding requests, whose Host is the attacker's domain.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
+    allowed_origins = {f"http://{host}:{config.port}" for host in LOCAL_HOSTS}
 
     @app.get("/")
     async def index() -> FileResponse:
@@ -133,12 +142,24 @@ def create_app(
         if already:
             await clients.send({"type": "turn_end", "error": False}, ws)
             return
+        try:
+            await bridge.send(BRIEFING_PROMPT)
+        except OSError:
+            logger.exception("briefing could not be sent")
+            await clients.send({"type": "turn_end", "error": True, "message": CLAUDE_MISSING}, ws)
+            return
         data_dir.mkdir(parents=True, exist_ok=True)
         marker.write_text(today, encoding="utf-8")
-        await bridge.send(BRIEFING_PROMPT)
 
     @app.websocket("/ws")
     async def websocket(ws: WebSocket) -> None:
+        # Browsers send Origin on every WebSocket and CORS does not apply to
+        # WebSockets: without this check any web page the user visits could
+        # drive Claude, which runs with full permissions.
+        origin = ws.headers.get("origin")
+        if origin is not None and origin not in allowed_origins:
+            await ws.close(code=1008)
+            return
         await ws.accept()
         previous, clients.active = clients.active, ws
         if previous is not None:
@@ -161,7 +182,11 @@ def create_app(
                 if kind == "say":
                     text = message.get("text", "")
                     await clients.send({"type": "user_text", "text": text}, ws)
-                    await bridge.send(text)
+                    try:
+                        await bridge.send(text)
+                    except OSError:
+                        logger.exception("message could not be sent to claude")
+                        await clients.send({"type": "turn_end", "error": True, "message": CLAUDE_MISSING}, ws)
                 elif kind == "stop":
                     await bridge.interrupt()
                 elif kind == "new_session":

@@ -29,6 +29,7 @@ class ToolUse:
 class TurnResult:
     session_id: str
     is_error: bool
+    message: str = ""  # why the turn failed, when Claude or the bridge says so
 
 
 Event = SessionInit | TextDelta | ToolUse | TurnResult
@@ -72,7 +73,9 @@ def parse_line(line: str) -> list[Event]:
         ]
     if kind == "result":
         is_error = bool(data.get("is_error")) or data.get("subtype") != "success"
-        return [TurnResult(data.get("session_id", ""), is_error)]
+        # Usage limits, login and resume failures arrive as the result text.
+        message = data.get("result") if is_error and isinstance(data.get("result"), str) else ""
+        return [TurnResult(data.get("session_id", ""), is_error, message.strip())]
     return []
 
 
