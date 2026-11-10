@@ -6,6 +6,7 @@ import asyncio
 import os
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Mapping
+from pathlib import Path
 
 from server.claude_events import Event, SessionInit, TurnResult, interrupt_request, parse_line, user_message
 from server.config import ROOT
@@ -17,7 +18,13 @@ LINE_LIMIT = 64 * 1024 * 1024
 _NESTING_VARS = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
 
 
-def build_command(claude_exe: str, session_id: str | None) -> list[str]:
+def build_command(
+    claude_exe: str,
+    session_id: str | None,
+    model: str | None = None,
+    prompt_file: Path = ASSISTANT_PROMPT,
+    extra: tuple[str, ...] = (),
+) -> list[str]:
     command = [
         claude_exe,
         "-p",
@@ -29,8 +36,11 @@ def build_command(claude_exe: str, session_id: str | None) -> list[str]:
         # The user's plugins load into headless sessions too; skills such as
         # brainstorming would turn "plan my day" into a design interview.
         "--disable-slash-commands",
-        "--append-system-prompt-file", str(ASSISTANT_PROMPT),
+        "--append-system-prompt-file", str(prompt_file),
+        *extra,
     ]
+    if model:
+        command += ["--model", model]
     if session_id:
         command += ["--resume", session_id]
     return command

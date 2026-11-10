@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,6 +18,17 @@ DEFAULT_VOCABULARY: tuple[str, ...] = (
 )
 
 
+# Which model each team member runs on: hard work on the strong model,
+# routine work on the cheap one.
+DEFAULT_MODELS: dict[str, str] = {
+    "lider": "claude-fable-5-2",
+    "kidemli": "claude-fable-5-2",
+    "gelistirici": "claude-sonnet-5-5",
+    "testci": "claude-sonnet-5-5",
+    "asistan": "claude-haiku-5-5",
+}
+
+
 @dataclass(frozen=True)
 class Config:
     port: int = 8765
@@ -25,6 +36,7 @@ class Config:
     voice: str = "tr-TR-EmelNeural"
     whisper_model: str = "large-v3-turbo"
     vocabulary: tuple[str, ...] = DEFAULT_VOCABULARY
+    models: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MODELS))
 
 
 def load_config(path: Path) -> Config:
@@ -37,4 +49,6 @@ def load_config(path: Path) -> Config:
     values = {k: v for k, v in raw.items() if k in known}
     if "vocabulary" in values:
         values["vocabulary"] = tuple(values["vocabulary"])
+    if "models" in values:
+        values["models"] = {**DEFAULT_MODELS, **values["models"]}
     return Config(**values)

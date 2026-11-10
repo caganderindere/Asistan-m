@@ -51,12 +51,11 @@ def _ready() -> bool:
 
 
 @pytest.fixture(scope="module")
-def server():
+def server(tmp_path_factory):
     assert not _ready(), "Claude Ses is already running on 8765; close it before the e2e test"
-    data = ROOT / "data"
-    saved = {name: (data / name).read_bytes() for name in ("session.json", "last_briefing.txt") if (data / name).exists()}
-    (data / "last_briefing.txt").unlink(missing_ok=True)  # exercise the daily briefing
-    proc = subprocess.Popen([PYTHON, "-m", "server.app"], cwd=ROOT, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    # A scratch data folder: no saved conversation, and the daily briefing is due.
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "CLAUDE_SES_DATA": str(tmp_path_factory.mktemp("data"))}
+    proc = subprocess.Popen([PYTHON, "-m", "server.app"], cwd=ROOT, env=env)
     try:
         for _ in range(240):
             if _ready():
@@ -67,10 +66,6 @@ def server():
     finally:
         proc.kill()
         proc.wait()
-        for name in ("session.json", "last_briefing.txt"):
-            (data / name).unlink(missing_ok=True)
-            if name in saved:
-                (data / name).write_bytes(saved[name])
 
 
 @pytest.fixture

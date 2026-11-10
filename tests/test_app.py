@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from server.app import BRIEFING_PROMPT, create_app
 from server.claude_events import TextDelta, ToolUse, TurnResult
 from server.config import Config
+from server.projects import ProjectList
+from server.team import LEAD, Team
 
 
 class FakeBridge:
@@ -19,7 +21,7 @@ class FakeBridge:
 
     async def start(self):
         self.loop = asyncio.get_running_loop()
-        self.queue = asyncio.Queue()
+        self.queue = self.queue or asyncio.Queue()
 
     async def close(self):
         pass
@@ -34,6 +36,7 @@ class FakeBridge:
         self.new_sessions += 1
 
     async def events(self):
+        await FakeBridge.start(self)  # the team starts only the lead; the others on first use
         while True:
             yield await self.queue.get()
 
@@ -66,10 +69,27 @@ async def failing_synth(text, voice):
     raise ConnectionError("edge down")
 
 
-def make_client(tmp_path, bridge, transcriber=None, synth=ok_synth):
+TOKEN = "test-token"
+
+
+def make_team(tmp_path, lead):
+    """A team whose lead is *lead*; the workers' bridges are in team.fakes."""
+    fakes = {LEAD: lead}
+    team = Team(Config().models, lambda role, *_: fakes.setdefault(role.id, FakeBridge()), tmp_path)
+    team.fakes = fakes
+    return team
+
+
+def make_app(tmp_path, bridge, transcriber=None, synth=ok_synth, team=None, **kwargs):
+    projects = ProjectList(tmp_path / "projects.json", str(tmp_path), tmp_path / "no-claude-projects")
+    return create_app(Config(), team or make_team(tmp_path, bridge), projects, transcriber or FakeTranscriber(),
+                      synth, data_dir=tmp_path, token=TOKEN, **kwargs)
+
+
+def make_client(tmp_path, bridge, transcriber=None, synth=ok_synth, team=None):
     # TestClient's WebSocket requests always use the host "testserver".
-    app = create_app(Config(), bridge, transcriber or FakeTranscriber(), synth, data_dir=tmp_path,
-                     allowed_hosts=("127.0.0.1", "localhost", "testserver"))
+    app = make_app(tmp_path, bridge, transcriber, synth, team,
+                   allowed_hosts=("127.0.0.1", "localhost", "testserver"))
     return TestClient(app, base_url="http://127.0.0.1:8765")
 
 
@@ -150,7 +170,8 @@ def test_briefing_once_per_day(client, fake_bridge, tmp_path):
 
 def test_stop_calls_interrupt(client, fake_bridge):
     with client.websocket_connect("/ws") as ws:
-        ws.receive_json()
+        ws.send_json({"type": "say", "text": "uzun bir iş"})
+        read_until(ws, "user_text")
         ws.send_json({"type": "stop"})
         ws.send_json({"type": "new_session"})
         read_until(ws, "session_reset")
@@ -214,6 +235,74 @@ def test_briefing_send_failure_keeps_marker_and_socket(tmp_path):
         ws.send_json({"type": "start"})
         end = read_until(ws, "turn_end")[-1]
     assert end["error"] and not (tmp_path / "last_briefing.txt").exists()
+
+
+AUTH = {"X-Ekip-Token": TOKEN}
+
+
+def test_connect_sends_projects_team_and_chat(client, tmp_path):
+    with client.websocket_connect("/ws") as ws:
+        msgs = read_until(ws, "chat")
+    assert [m["type"] for m in msgs] == ["status", "projects", "team", "chat"]
+    assert msgs[1]["current"] == str(tmp_path)
+    assert [a["id"] for a in msgs[2]["agents"]] == ["lider", "kidemli", "gelistirici", "testci", "asistan"]
+    assert msgs[2]["agents"][4]["model"] == "claude-haiku-5-5"
+
+
+def test_lead_plans_then_starts_work_through_the_api(client):
+    with client.websocket_connect("/ws") as ws:
+        read_until(ws, "chat")
+        r = client.post("/api/team/plan", headers=AUTH, json={"tasks": [{"to": "asistan", "text": "Dosyaları bul"}]})
+        assert r.status_code == 200 and r.json()["tasks"][0]["status"] == "proposed"
+        assert read_until(ws, "team")[-1]["phase"] == "meeting"
+        assert client.post("/api/team/begin", headers=AUTH, json={"ids": []}).status_code == 200
+        assert read_until(ws, "team")[-1]["phase"] == "working"
+    state = client.get("/api/team/state", headers=AUTH).json()
+    assert state["tasks"][0]["status"] == "running"
+
+
+def test_team_api_refuses_callers_without_the_token(client):
+    body = {"to": "asistan", "text": "her şeyi değiştir"}
+    assert client.post("/api/team/assign", json=body).status_code == 403
+    assert client.post("/api/team/assign", json=body, headers={"X-Ekip-Token": "wrong"}).status_code == 403
+    from_a_page = {**AUTH, "Origin": "http://127.0.0.1:8765"}
+    assert client.post("/api/team/assign", json=body, headers=from_a_page).status_code == 403
+    assert client.get("/api/team/state", headers=AUTH).json()["tasks"] == []
+
+
+def test_team_api_explains_refusals(client):
+    r = client.post("/api/team/assign", headers=AUTH, json={"to": "patron", "text": "iş"})
+    assert r.status_code == 400 and "patron" in r.json()["error"]
+    assert client.post("/api/team/plan", headers=AUTH, json={"görev": 1}).status_code == 400
+
+
+def test_report_turn_reaches_the_browser(tmp_path, fake_bridge):
+    team = make_team(tmp_path, fake_bridge)
+    with make_client(tmp_path, fake_bridge, team=team) as c, c.websocket_connect("/ws") as ws:
+        read_until(ws, "chat")
+        c.post("/api/team/assign", headers=AUTH, json={"to": "asistan", "text": "Dosyaları bul"})
+        team.fakes["asistan"].push(TextDelta("Üç dosya buldum."), TurnResult("w", False))
+        # The lead is told, and speaks without the user having asked.
+        read_until(ws, "lead_turn")
+        fake_bridge.push(TextDelta("Asistan üç dosya buldu."), TurnResult("s1", False))
+        msgs = read_until(ws, "turn_end")
+    assert [m["text"] for m in msgs if m["type"] == "sentence"] == ["Asistan üç dosya buldu."]
+    assert fake_bridge.sent[-1].startswith("[EKİP RAPORU]")
+
+
+def test_selecting_a_project_moves_the_team(client, tmp_path):
+    other = tmp_path / "Site"
+    other.mkdir()
+    with client.websocket_connect("/ws") as ws:
+        read_until(ws, "chat")
+        ws.send_json({"type": "add_project", "path": str(other)})
+        msgs = read_until(ws, "chat")
+        assert next(m for m in msgs if m["type"] == "projects")["current"] == str(other)
+        assert next(m for m in msgs if m["type"] == "team")["project"] == str(other)
+        ws.send_json({"type": "add_project", "path": str(tmp_path / "yok")})
+        assert "bulunamadı" in read_until(ws, "notice")[-1]["text"]
+        ws.send_json({"type": "select_project", "path": "C:\\Windows\\System32"})
+        assert "listesinde yok" in read_until(ws, "notice")[-1]["text"]
 
 
 def test_missing_claude_reports_error(tmp_path):

@@ -7,9 +7,7 @@ import time
 
 import uvicorn
 
-from server.app import create_app
-from server.config import Config
-from tests.test_app import FakeBridge, FakeTranscriber, ok_synth
+from tests.test_app import FakeBridge, make_app
 
 
 def free_port():
@@ -22,7 +20,7 @@ def test_websocket_over_real_uvicorn(tmp_path):
     from websockets.sync.client import connect
 
     port = free_port()
-    app = create_app(Config(), FakeBridge(), FakeTranscriber(), ok_synth, data_dir=tmp_path)
+    app = make_app(tmp_path, FakeBridge())
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
