@@ -29,6 +29,7 @@ REPORT_LIMIT = 4000
 LOG_LINES = 12
 KEPT_TASKS = 40
 KEPT_TURNS = 50
+RESTED_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -123,7 +124,8 @@ class Team:
                 task.status = "stopped"
         self.chat = self._read(folder / "chat.json")
         self.question = ""
-        now = self._clock()
+        # Nobody has just finished anything: the team starts out resting, not on a coffee break.
+        now = self._clock() - RESTED_SECONDS
         self.agents = {
             role.id: Agent(
                 role,

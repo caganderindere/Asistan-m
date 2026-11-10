@@ -17,6 +17,31 @@ hatırlatma kurar ve Emel'in sesiyle yanıt verir.
 
 Kısayol silinirse: `powershell -ExecutionPolicy Bypass -File D:\ClaudeSes\tools\make_shortcut.ps1`
 
+## Ekip ve ofis
+
+Sen yalnızca **Takım Lideri** ile konuşursun. Lider işi dört çalışana dağıtır; her biri
+ayrı bir Claude Code sürecidir ve kendi modelinde çalışır.
+
+| Departman | Çalışan | Varsayılan model | İş |
+|---|---|---|---|
+| Yönetim | Takım Lideri | `claude-fable-5-2` | Seninle konuşur, planlar, dağıtır, raporlar |
+| Mühendislik | Kıdemli Geliştirici | `claude-fable-5-2` | Zor işler |
+| Mühendislik | Geliştirici | `claude-sonnet-5-5` | Orta işler |
+| Kalite | Testçi | `claude-sonnet-5-5` | Test ve inceleme |
+| Destek | Asistan | `claude-haiku-5-5` | Basit işler |
+
+- **Akış:** işi söylersin, lider planı okuyup onayını ister, "tamam" deyince ekip başlar.
+  Biten her işin raporu lidere gider; lider sana özetler.
+- **Riskli işler** (silme, `git push`, paket kurma, proje dışına yazma): çalışan durur,
+  lider sana sorar. Bu kural çalışanların talimatındadır, teknik bir kilit değildir.
+- **Projeler (sol):** Claude Code'da kullandığın klasörler listelenir; tıklayınca ekip o
+  klasöre geçer. Her projenin konuşması ve görevleri ayrı saklanır. Çalışan varken proje
+  değiştirirsen süren işler yarıda kalır.
+- **Ofis (orta):** çalışan masasında, plan onay beklerken herkes toplantı odasında,
+  işini yeni bitiren mutfakta, uzun süredir boşta olan dinlenme alanında görünür.
+  Birine tıklayınca görevi ve son yaptıkları açılır.
+- Kurallar `asistan\ASISTAN.md`, `ekip\LIDER.md` ve `ekip\CALISAN.md` dosyalarındadır.
+
 ## Ayarlar — `config.json` (isteğe bağlı)
 
 ```json
@@ -25,11 +50,13 @@ Kısayol silinirse: `powershell -ExecutionPolicy Bypass -File D:\ClaudeSes\tools
   "vocabulary": ["Çağan", "Claude", "WordPress", "Nevka Kağıt", "Telsiz Mağaza", "BalBal Medya"],
   "whisper_model": "large-v3-turbo",
   "workdir": "D:\\",
-  "port": 8765
+  "port": 8765,
+  "models": { "kidemli": "claude-opus-5-5" }
 }
 ```
 
-Yalnızca değiştirmek istediğin alanları yaz. `vocabulary`, ses tanımanın doğru yazmasını
+Yalnızca değiştirmek istediğin alanları yaz. `models` içinde `lider`, `kidemli`,
+`gelistirici`, `testci`, `asistan` için model seçebilirsin. `vocabulary`, ses tanımanın doğru yazmasını
 istediğin özel isimlerdir (müşteriler, siteler, kişiler). Erkek ses için `tr-TR-AhmetNeural`.
 Değişiklikten sonra uygulamayı kapatıp aç.
 
@@ -64,7 +91,8 @@ D:\ClaudeSes\.venv\Scripts\python.exe D:\ClaudeSes\tools\reminder.py delete <id>
 - Seslendirilen yanıtlar ve hatırlatmalar Microsoft Edge seslendirme hizmetine gider
   (resmi olmayan erişim yolu; internet gerekir, ileride çalışmayı bırakabilir).
 - Sunucu yalnızca bu bilgisayardan (`127.0.0.1`) erişilebilir.
-- Asistan **tam yetkiyle** çalışır: onay sormadan dosya değiştirir ve komut çalıştırır.
+- Ekip **tam yetkiyle** çalışır: Claude süreçleri izin sormadan dosya değiştirip komut
+  çalıştırabilir. Plan onayı ve riskli iş sorusu talimatla sağlanır.
 
 ## Sorun giderme
 

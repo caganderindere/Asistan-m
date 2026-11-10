@@ -8,22 +8,66 @@
 </head>
 <body>
   <header class="topbar">
-    <span class="workdir" id="workdir">D:\</span>
+    <strong class="brand">Claude Ses</strong>
+    <span class="workdir" id="workdir"></span>
     <span class="conn" id="conn" data-state="connecting">Bağlanıyor…</span>
     <button class="ghost" id="newSession" type="button">Yeni konuşma</button>
   </header>
 
-  <main class="stage">
-    <button class="orb" id="orb" type="button" data-state="idle" aria-label="Sesli konuşmayı başlat">
-      <span class="orb-core"></span>
-    </button>
-    <p class="status" id="status" aria-live="polite">Başlamak için küreye dokun</p>
-    <p class="tool-line" id="toolLine"></p>
-    <p class="notice" id="notice" hidden></p>
-    <button class="stop" id="stop" type="button">Dur <kbd>Esc</kbd></button>
+  <nav class="projects" aria-label="Projeler">
+    <h2>Projeler</h2>
+    <ul id="projectList"></ul>
+    <form id="addProject">
+      <label for="projectPath">Klasör ekle</label>
+      <div class="row">
+        <input id="projectPath" type="text" placeholder="D:\Projem" autocomplete="off" spellcheck="false">
+        <button type="submit">Ekle</button>
+      </div>
+    </form>
+  </nav>
+
+  <main class="floor">
+    <div class="office-wrap">
+      <svg id="office" role="img" aria-label="Ofisin kuşbakışı görünümü"></svg>
+      <p class="question" id="question" hidden></p>
+      <aside class="agent-card" id="agentCard" hidden>
+        <button class="close" id="agentClose" type="button" aria-label="Kapat">×</button>
+        <h3 id="agentName"></h3>
+        <p class="meta" id="agentMeta"></p>
+        <p id="agentWhere"></p>
+        <p class="task" id="agentTask"></p>
+        <ol id="agentLog"></ol>
+      </aside>
+    </div>
+
+    <section class="voice" aria-label="Takım lideriyle konuş">
+      <button class="orb" id="orb" type="button" data-state="idle" aria-label="Sesli konuşmayı başlat">
+        <span class="orb-core"></span>
+      </button>
+      <div class="voice-text">
+        <p class="status" id="status" aria-live="polite">Başlamak için küreye dokun</p>
+        <p class="tool-line" id="toolLine"></p>
+        <p class="notice" id="notice" hidden></p>
+      </div>
+      <form class="say" id="sayForm">
+        <input id="sayText" type="text" placeholder="Ya da lidere yaz" autocomplete="off" aria-label="Lidere yaz">
+        <button type="submit">Gönder</button>
+      </form>
+      <button class="stop" id="stop" type="button">Dur <kbd>Esc</kbd></button>
+    </section>
   </main>
 
-  <section class="history" id="history" aria-label="Konuşma geçmişi"></section>
+  <aside class="side">
+    <section class="panel talk">
+      <h2>Takım lideri</h2>
+      <div class="history" id="history" aria-label="Konuşma geçmişi"></div>
+    </section>
+    <section class="panel board">
+      <h2>Görevler</h2>
+      <ol id="tasks"></ol>
+      <p class="empty" id="tasksEmpty">Henüz görev yok. Lidere ne yapılacağını söyle; planı sana okuyup onayını ister.</p>
+    </section>
+  </aside>
 
   <template id="turnTemplate">
     <article class="turn">

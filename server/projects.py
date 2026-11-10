@@ -10,7 +10,7 @@ from pathlib import Path
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 _WINDOWS_PATH = re.compile(r"^[A-Za-z]:\\")
 # Claude's own scratch and memory-observer sessions are not the user's projects.
-_NOISE = ("\\AppData\\Local\\Claude\\", "observer-sessions")
+_NOISE = re.compile(r"\\scratch-\d{4}-\d{2}-\d{2}-|observer-sessions")
 _HEAD_LINES = 60
 
 
@@ -43,7 +43,7 @@ def discover(claude_projects: Path = CLAUDE_PROJECTS) -> list[str]:
         sessions = sorted(folder.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         for session in sessions[:3]:
             cwd = _cwd_of(session)
-            if cwd and not any(noise in cwd for noise in _NOISE):
+            if cwd and not _NOISE.search(cwd):
                 found.append((sessions[0].stat().st_mtime, cwd))
                 break
     found.sort(reverse=True)

@@ -17,6 +17,7 @@ def test_discover_reads_real_paths_newest_first(tmp_path):
     session(claude, "D--Eski", "D:\\Eski", 1000)
     session(claude, "C--Users--a-an", "C:\\Users\\çağan", 2000)
     session(claude, "bash", "/c/Users/x", 3000)  # not a Windows path: skipped
+    session(claude, "scratch", "C:\\Users\\x\\AppData\\ws\\scratch-2026-11-09-77f097", 4000)  # Claude's own
     (claude / "bos").mkdir()
     assert discover(claude) == ["C:\\Users\\çağan", "D:\\Eski"]
 
