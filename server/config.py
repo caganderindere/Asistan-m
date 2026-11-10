@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_VOCABULARY: tuple[str, ...] = (
     "Çağan",
+    "Jarvis",
     "Claude",
     "WordPress",
     "Nevka Kağıt",
@@ -33,7 +34,10 @@ DEFAULT_MODELS: dict[str, str] = {
 class Config:
     port: int = 8765
     workdir: str = "D:\\"
-    voice: str = "tr-TR-EmelNeural"
+    # Jarvis: the male voice, a touch deeper than it comes.
+    voice: str = "tr-TR-AhmetNeural"
+    voice_rate: str = "+0%"
+    voice_pitch: str = "-6Hz"
     whisper_model: str = "large-v3-turbo"
     vocabulary: tuple[str, ...] = DEFAULT_VOCABULARY
     models: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MODELS))

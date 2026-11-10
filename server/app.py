@@ -28,7 +28,7 @@ from server.config import ROOT, Config
 from server.projects import ProjectList
 from server.sentences import SentenceSplitter
 from server.stt import is_meaningful
-from server.team import LeadTurn, Team, TeamError
+from server.team import LeadTurn, MeetingEnded, Team, TeamError
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,17 @@ CLAUDE_MISSING = (
 )
 
 Synth = Callable[[str, str], Awaitable[bytes]]
+
+
+def greeting(hour: int) -> str:
+    """What Jarvis says when the user starts talking and the day's briefing is already done."""
+    if hour < 5 or hour >= 22:
+        return "Geç saatte de buradayım efendim, dinliyorum."
+    if hour < 12:
+        return "Günaydın efendim, dinliyorum."
+    if hour < 18:
+        return "Buyurun efendim, dinliyorum."
+    return "İyi akşamlar efendim, dinliyorum."
 
 
 class _Clients:
@@ -80,6 +91,8 @@ def create_app(
         async for event in team.lead_events():
             if isinstance(event, LeadTurn):
                 await clients.send({"type": "lead_turn"})
+            elif isinstance(event, MeetingEnded):
+                await clients.send({"type": "meeting", "lines": event.lines})
             elif isinstance(event, TextDelta):
                 text = f"\n{event.text}" if text_seen and after_tool else event.text
                 text_seen, after_tool = True, False
@@ -156,6 +169,7 @@ def create_app(
         except FileNotFoundError:
             already = False
         if already:
+            await clients.send({"type": "sentence", "text": greeting(datetime.datetime.now().hour)}, ws)
             await clients.send({"type": "turn_end", "error": False}, ws)
             return
         try:
@@ -352,7 +366,11 @@ def main(argv: list[str] | None = None) -> None:
     projects = ProjectList(data_dir / "projects.json", config.workdir)
     print("Ses tanıma modeli yükleniyor…", flush=True)
     transcriber = Transcriber(config.whisper_model, config.vocabulary)
-    app = create_app(config, team, projects, transcriber, synthesize, data_dir=data_dir, token=token)
+
+    async def speak(text: str, voice: str) -> bytes:
+        return await synthesize(text, voice, config.voice_rate, config.voice_pitch)
+
+    app = create_app(config, team, projects, transcriber, speak, data_dir=data_dir, token=token)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))
     if args.open:
         threading.Thread(target=_open_when_ready, args=(server, url), daemon=True).start()

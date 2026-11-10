@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from server.claude_events import TextDelta, ToolUse, TurnResult
-from server.team import LEAD, LeadTurn, TeamError
+from server.team import LEAD, LeadTurn, MeetingEnded, TeamError
 from tests.test_app import FakeBridge, make_team
 
 
@@ -69,11 +69,91 @@ async def test_finished_task_is_reported_to_the_lead(team):
     assert by_id(team)["gelistirici"]["state"] == "idle"
 
 
-async def test_report_names_who_is_still_working(team):
+async def test_lead_hears_nothing_until_everyone_is_done(team):
+    await team.assign("gelistirici", "Kodu yaz")
+    await team.assign("asistan", "Birinci")
+    await team.assign("asistan", "İkinci")
+    await finish(team, "gelistirici", TextDelta("Bitti."))
+    await finish(team, "asistan", TextDelta("Birinci bitti."))
+    assert team.fakes[LEAD].sent == [] and team.snapshot()["phase"] == "working"
+
+
+async def two_finish_their_work(team):
     await team.assign("gelistirici", "Kodu yaz")
     await team.assign("testci", "Testi yaz")
-    await finish(team, "gelistirici", TextDelta("Bitti."))
-    assert "Hâlâ çalışan: Testçi (#2)." in team.fakes[LEAD].sent[-1]
+    await finish(team, "gelistirici", TextDelta("Kod yazıldı."))
+    await finish(team, "testci", TextDelta("Bir test kırmızı."))
+
+
+async def test_workers_talk_it_over_before_the_lead_is_told(team):
+    await two_finish_their_work(team)
+    snap = team.snapshot()
+    assert snap["phase"] == "review"
+    assert snap["review"] == {"members": ["gelistirici", "testci"], "speaker": "gelistirici", "lines": []}
+    opening = team.fakes["gelistirici"].sent[-1]
+    assert opening.startswith("[EKİP TOPLANTISI]") and "Bir test kırmızı." in opening and "ilk sözü sen" in opening
+    assert team.fakes[LEAD].sent == [] and team.fakes["testci"].sent == ["[GÖREV #2]\nTesti yaz"]
+
+    await finish(team, "gelistirici", TextDelta("Kırmızı test benim değişikliğimden olabilir."))
+    heard = team.fakes["testci"].sent[-1]
+    assert "Geliştirici: Kırmızı test benim değişikliğimden olabilir." in heard and "Sıra sende, Testçi" in heard
+    assert team.snapshot()["review"]["speaker"] == "testci"
+
+    await finish(team, "testci", TextDelta("Evet, tarih biçimi değişmiş."))
+    assert "Son söz sende, Geliştirici" in team.fakes["gelistirici"].sent[-1]
+    assert team.fakes[LEAD].sent == []
+
+    await finish(team, "gelistirici", TextDelta("Biçimi geri alıyoruz, anlaştık."))
+    told = team.fakes[LEAD].sent[-1]
+    assert team.snapshot()["phase"] == "working" and team.snapshot()["review"] is None  # the lead is now talking
+    assert told.index("[EKİP RAPORU]") < told.index("[EKİP TOPLANTISI]")
+    assert "#1 Geliştirici — bitti" in told and "Testçi: Evet, tarih biçimi değişmiş." in told
+    assert told.count("Geliştirici:") == 2
+    assert team.chat[-1]["meeting"] == [
+        {"who": "gelistirici", "text": "Kırmızı test benim değişikliğimden olabilir."},
+        {"who": "testci", "text": "Evet, tarih biçimi değişmiş."},
+        {"who": "gelistirici", "text": "Biçimi geri alıyoruz, anlaştık."},
+    ]
+
+
+async def test_meeting_is_announced_to_the_browser_side(team):
+    events = team.lead_events()
+    await two_finish_their_work(team)
+    for role in ("gelistirici", "testci", "gelistirici"):
+        await finish(team, role, TextDelta("Tamam."))
+    ended = await asyncio.wait_for(anext(events), 1)
+    assert isinstance(ended, MeetingEnded) and len(ended.lines) == 3
+    assert isinstance(await asyncio.wait_for(anext(events), 1), LeadTurn)
+
+
+async def test_no_meeting_while_part_of_the_plan_is_still_to_start(team):
+    team.plan([("gelistirici", "Kodu yaz"), ("testci", "Testi yaz")])
+    await team.begin([1])
+    await finish(team, "gelistirici", TextDelta("Kod yazıldı."))
+    assert "Başlatılmayı bekleyen önerilmiş görevler: #2." in team.fakes[LEAD].sent[-1]
+    await finish(team, LEAD, TextDelta("Testi başlatıyorum."))
+    await team.begin([2])
+    await finish(team, "testci", TextDelta("Testler geçti."))
+    # Now both have worked on the same job, and both reports are on the table.
+    assert team.snapshot()["phase"] == "review"
+    assert "Kod yazıldı." in team.fakes["gelistirici"].sent[-1] and "Testler geçti." in team.fakes["gelistirici"].sent[-1]
+
+
+async def test_separate_jobs_do_not_share_a_meeting(team):
+    await team.assign("asistan", "README")
+    await finish(team, "asistan", TextDelta("Güncellendi."))
+    await finish(team, LEAD, TextDelta("Bitti."))
+    await team.assign("kidemli", "Hata")
+    await finish(team, "kidemli", TextDelta("Düzeltildi."))
+    assert team.snapshot()["phase"] == "working" and team.fakes["asistan"].sent == ["[GÖREV #1]\nREADME"]
+
+
+async def test_stopping_ends_the_meeting(team):
+    await two_finish_their_work(team)
+    await team.interrupt()
+    await finish(team, "gelistirici", error=True)
+    assert team.snapshot()["review"] is None and team.fakes[LEAD].sent == []
+    assert by_id(team)["gelistirici"]["state"] == "idle"
 
 
 async def test_reports_wait_while_the_lead_is_talking(team):

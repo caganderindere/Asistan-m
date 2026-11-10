@@ -10,8 +10,8 @@ MP3 = (Path(__file__).parent / "fixtures" / "merhaba.mp3").read_bytes()
 
 
 class FakeCommunicate:
-    def __init__(self, text, voice):
-        self.args = (text, voice)
+    def __init__(self, text, voice, rate, pitch):
+        self.args = (text, voice, rate, pitch)
 
     async def stream(self):
         yield {"type": "WordBoundary"}

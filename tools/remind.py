@@ -51,7 +51,9 @@ def main(reminder_id: str) -> int:
         return 0
     show_notification(reminder.text)
     try:
-        wav = asyncio.run(synthesize(f"Hatırlatma: {reminder.text}", load_config(ROOT / "config.json").voice))
+        config = load_config(ROOT / "config.json")
+        speech = synthesize(f"Hatırlatma efendim: {reminder.text}", config.voice, config.voice_rate, config.voice_pitch)
+        wav = asyncio.run(speech)
         winsound.PlaySound(wav, winsound.SND_MEMORY)
     except Exception:
         logging.exception("reminder %s could not be spoken", reminder_id)

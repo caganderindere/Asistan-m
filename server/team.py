@@ -1,8 +1,9 @@
 """Five Claude processes working as a team in one project at a time.
 
 The user talks only to the lead. The lead hands work to the others through
-tools/ekip.py, which calls plan/begin/assign/ask here; each finished task
-is reported back to the lead as a message.
+tools/ekip.py, which calls plan/begin/assign/ask here. When the work is done
+the workers talk it over among themselves, and the lead then gets their
+reports and what was said, to tell the user.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 LEAD = "lider"
 REPORT_LIMIT = 4000
+LINE_LIMIT = 1200
 LOG_LINES = 12
 KEPT_TASKS = 40
 KEPT_TURNS = 50
@@ -41,7 +43,7 @@ class Role:
 
 
 ROLES: tuple[Role, ...] = (
-    Role(LEAD, "Takım Lideri", "Yönetim", "Çağan ile konuşur, işi planlar ve dağıtır, sonucu raporlar."),
+    Role(LEAD, "Jarvis", "Yönetim", "Çağan ile konuşur, işi planlar ve dağıtır, sonucu raporlar."),
     Role("kidemli", "Kıdemli Geliştirici", "Mühendislik",
          "Zor işler: mimari kararlar, karmaşık hatalar, çok dosyalı değişiklikler."),
     Role("gelistirici", "Geliştirici", "Mühendislik",
@@ -55,6 +57,24 @@ ROLES: tuple[Role, ...] = (
 @dataclass
 class LeadTurn:
     """The lead started a turn the user did not ask for (a team report arrived)."""
+
+
+@dataclass
+class MeetingEnded:
+    """The workers finished talking; *lines* is what each said, in order."""
+
+    lines: list[dict[str, str]]
+
+
+@dataclass
+class Meeting:
+    """The workers talking over finished work before the lead reports it."""
+
+    members: list[str]
+    order: list[str]  # who has yet to speak; the first speaker comes back for the last word
+    reports: list[str]
+    speaker: str = ""
+    lines: list[dict[str, str]] = field(default_factory=list)  # {"who": role id, "text": ...}
 
 
 @dataclass
@@ -76,6 +96,7 @@ class Agent:
     since: float = 0.0
     task: Task | None = None
     interrupted: bool = False
+    in_meeting: bool = False  # its current turn is a word in the meeting, not a task
     text: str = ""  # what it has said since its last tool call: its report when the turn ends
     log: deque[str] = field(default_factory=lambda: deque(maxlen=LOG_LINES))
 
@@ -104,7 +125,11 @@ class Team:
         self.tasks: list[Task] = []
         self.chat: list[dict[str, str]] = []
         self.question = ""
-        self._reports: list[str] = []
+        self._reports: list[str] = []  # finished tasks the lead has not been told about
+        self._unspoken: list[dict[str, str]] = []  # a meeting the lead has not been told about
+        self._attended: list[str] = []  # who finished work since the last meeting, in order
+        self._undiscussed: list[str] = []  # their reports
+        self._meeting: Meeting | None = None
         self._watchers: list[asyncio.Task] = []
         self._lead_events: asyncio.Queue = asyncio.Queue()
         self._dirty = asyncio.Event()
@@ -155,7 +180,7 @@ class Team:
             with contextlib.suppress(Exception):
                 await agent.bridge.close()
         self.agents = {}
-        self._reports = []
+        self._forget_pending()
         self._turn_open = False
         while not self._lead_events.empty():
             self._lead_events.get_nowait()
@@ -183,7 +208,7 @@ class Team:
         for task in self.tasks:
             if task.status == "queued":
                 task.status = "stopped"
-        self._reports = []
+        self._forget_pending()
         working = [a for a in self.agents.values() if a.state == "working"]
         for agent in working:
             agent.interrupted = True
@@ -197,9 +222,10 @@ class Team:
         now = self._clock()
         for agent in self.agents.values():
             agent.state, agent.activity, agent.task, agent.since = "idle", "", None, now
-            agent.interrupted = False
+            agent.interrupted = agent.in_meeting = False
             agent.log.clear()
-        self.tasks, self.chat, self._reports, self.question = [], [], [], ""
+        self.tasks, self.chat, self.question = [], [], ""
+        self._forget_pending()
         self._turn_open = False
         self._save()
         self._touch()
@@ -260,7 +286,10 @@ class Team:
     def snapshot(self) -> dict:
         now = self._clock()
         statuses = {t.status for t in self.tasks}
-        if "proposed" in statuses and not statuses & {"running", "queued"}:
+        meeting = self._meeting
+        if meeting is not None:
+            phase = "review"  # the workers are talking over what they did
+        elif "proposed" in statuses and not statuses & {"running", "queued"}:
             phase = "meeting"  # a plan is on the table, waiting for the user's yes
         else:
             phase = "working" if self.busy else "idle"
@@ -269,6 +298,7 @@ class Team:
             "project": self.project,
             "phase": phase,
             "question": self.question,
+            "review": meeting and {"members": meeting.members, "speaker": meeting.speaker, "lines": meeting.lines},
             "agents": [
                 {
                     "id": a.role.id,
@@ -363,14 +393,17 @@ class Team:
             self._turn_open = False
             del self.chat[:-KEPT_TURNS]
         else:
-            self._finish_task(agent, result)
+            if agent.in_meeting:
+                self._heard(agent, result)
+            else:
+                self._finish_task(agent, result)
             waiting = next((t for t in self.tasks if t.to == agent.role.id and t.status == "queued"), None)
             if waiting is not None:
                 await self._dispatch(waiting)
         agent.interrupted = False
         self._save()
         self._touch()
-        await self._deliver_reports()
+        await self._advance()
 
     def _finish_task(self, agent: Agent, result: TurnResult) -> None:
         task, agent.task = agent.task, None
@@ -382,28 +415,122 @@ class Team:
             return
         task.status = "error" if result.is_error else "done"
         outcome = "HATA" if result.is_error else "bitti"
-        self._reports.append(f"#{task.id} {agent.role.name} — {outcome}:\n{task.result or '(rapor yazmadı)'}")
+        report = f"#{task.id} {agent.role.name} — {outcome}:\n{task.result or '(rapor yazmadı)'}"
+        self._reports.append(report)
+        self._undiscussed.append(report)
+        if agent.role.id not in self._attended:
+            self._attended.append(agent.role.id)
+
+    def _forget_pending(self) -> None:
+        self._reports, self._unspoken, self._attended, self._undiscussed = [], [], [], []
+        self._meeting = None
+
+    async def _advance(self) -> None:
+        """Once the team goes quiet: the next word in the meeting, a meeting, or the lead's report."""
+        if self._meeting is not None:
+            if not self._meeting.speaker:
+                await self._next_speaker()
+            return
+        still_at_it = any(a.task for a in self.agents.values()) or any(t.status == "queued" for t in self.tasks)
+        if still_at_it:
+            return
+        more_to_start = any(t.status == "proposed" for t in self.tasks)
+        if len(self._attended) >= 2 and not more_to_start:
+            # One person has nobody to talk to; a half-done plan is talked over at its end.
+            self._meeting = Meeting(
+                members=list(self._attended),
+                order=[*self._attended, self._attended[0]],
+                reports=self._undiscussed,
+            )
+            self._attended, self._undiscussed = [], []
+            await self._next_speaker()
+        else:
+            if not more_to_start:
+                self._attended, self._undiscussed = [], []  # this job is over; the next one starts clean
+            await self._deliver_reports()
+
+    async def _next_speaker(self) -> None:
+        meeting = self._meeting
+        assert meeting is not None
+        while meeting.order:
+            agent = self.agents[meeting.order.pop(0)]
+            if agent.state == "working":
+                continue  # was handed new work in the meantime
+            meeting.speaker, agent.in_meeting = agent.role.id, True
+            try:
+                await self._send(agent, self._meeting_prompt(meeting, agent, last=not meeting.order))
+                return
+            except OSError:
+                logger.exception("%s could not join the meeting", agent.role.id)
+                meeting.speaker, agent.in_meeting, agent.state = "", False, "error"
+        self._meeting = None
+        if meeting.lines:
+            self._unspoken = meeting.lines
+            # Before the lead's open turn, if it is talking: its reply belongs to the last entry.
+            at = len(self.chat) - 1 if self._turn_open else len(self.chat)
+            self.chat.insert(at, {"you": "", "reply": "", "meeting": meeting.lines})
+            self._lead_events.put_nowait(MeetingEnded(meeting.lines))
+        self._save()
+        self._touch()
+        await self._deliver_reports()
+
+    def _meeting_prompt(self, meeting: Meeting, agent: Agent, last: bool) -> str:
+        said = "\n".join(f"{self.agents[line['who']].role.name}: {line['text']}" for line in meeting.lines)
+        if last and meeting.lines:
+            turn = (
+                f"Son söz sende, {agent.role.name}. Söylenenlere yanıt ver ve toplantıyı bir iki cümleyle bağla: "
+                "ekip neyde anlaştı, açık kalan ne var."
+            )
+        else:
+            turn = (
+                f"Sıra sende, {agent.role.name}. En çok üç cümleyle konuş: başkasının işinde gördüğün sorun ya da "
+                "eksik, kendi işinle çakışan bir şey varsa söyle; söylenenlere katılmıyorsan nedenini söyle. "
+                "Ekleyeceğin bir şey yoksa bunu tek cümleyle belirt."
+            )
+        return "\n\n".join([
+            "[EKİP TOPLANTISI]\nİşler bitti; ekip sonuçları kendi arasında konuşuyor. "
+            "Toplantıdan sonra Jarvis, Çağan'a özet verecek.",
+            "Raporlar:\n" + "\n\n".join(meeting.reports),
+            "Şimdiye kadar söylenenler:\n" + (said or "Henüz kimse konuşmadı; ilk sözü sen alıyorsun."),
+            turn + " Araç kullanma, dosya değiştirme. Düz konuşma diliyle yaz; liste, başlık ya da kod yazma.",
+        ])
+
+    def _heard(self, agent: Agent, result: TurnResult) -> None:
+        agent.in_meeting = False
+        meeting = self._meeting
+        if meeting is None:
+            return  # the user stopped the meeting
+        meeting.speaker = ""
+        text = agent.text.strip()
+        if text and not result.is_error:
+            meeting.lines.append({"who": agent.role.id, "text": text[:LINE_LIMIT]})
 
     async def _deliver_reports(self) -> None:
         lead = self.agents.get(LEAD)
-        if lead is None or not self._reports or lead.state == "working":
+        if lead is None or not (self._reports or self._unspoken) or lead.state == "working":
             return
         still = [
             f"{a.role.name} (#{a.task.id})" for a in self.agents.values() if a.task and a.state == "working"
         ]
         waiting = [f"#{t.id}" for t in self.tasks if t.status == "proposed"]
-        lines = ["[EKİP RAPORU]", *self._reports]
+        lines = []
+        if self._reports:
+            lines += ["[EKİP RAPORU]", *self._reports]
+        if self._unspoken:
+            lines.append("[EKİP TOPLANTISI]\n" + "\n".join(
+                f"{self.agents[line['who']].role.name}: {line['text']}" for line in self._unspoken
+            ))
         lines.append(f"Hâlâ çalışan: {', '.join(still)}." if still else "Şu an çalışan kimse yok.")
         if waiting:
             lines.append(f"Başlatılmayı bekleyen önerilmiş görevler: {', '.join(waiting)}.")
-        self._reports = []
+        self._reports, self._unspoken = [], []
         self._lead_events.put_nowait(LeadTurn())
         try:
             await self._send(lead, "\n\n".join(lines))
         except OSError:
             logger.exception("report could not be sent to the lead")
             lead.state = "error"
-            self._lead_events.put_nowait(TurnResult("", True, "Takım liderine ulaşılamadı."))
+            self._lead_events.put_nowait(TurnResult("", True, "Jarvis'e ulaşılamadı."))
             self._touch()
 
     def _touch(self) -> None:
