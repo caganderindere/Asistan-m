@@ -4,14 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Claude Ses</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <link rel="stylesheet" href="/static/style.css?v=7">
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <!-- Silero VAD, the speech detector Pipecat and LiveKit use, running in the browser. -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/bundle.min.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <strong class="brand">Claude Ses</strong>
-    <span class="workdir" id="workdir"></span>
-    <span class="conn" id="conn" data-state="connecting">Bağlanıyor…</span>
-    <button class="ghost" id="newSession" type="button">Yeni konuşma</button>
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div><strong>Daim</strong><small id="workdir"></small></div>
+    </div>
+    <div class="modes" role="tablist" aria-label="Çalışma biçimi">
+      <button type="button" role="tab" id="tabOffice" aria-selected="true">
+        <b>Sohbet</b><small>Daim · Gemini</small>
+      </button>
+      <button type="button" role="tab" id="tabTerminal" aria-selected="false">
+        <b>Terminal</b><small>Claude Code</small>
+      </button>
+    </div>
+    <div class="top-actions">
+      <button class="away" id="awayToggle" type="button" aria-pressed="false"
+              title="Açıkken Daim senin yerine karar verir ve işi bitirir; kapatınca olanları anlatır.">
+        <i aria-hidden="true"></i><span>Uzaktayım</span>
+      </button>
+      <span class="conn" id="conn" data-state="connecting">Bağlanıyor…</span>
+      <button class="ghost" id="newSession" type="button" title="Daim ile konuşmayı sıfırla">Yeni konuşma</button>
+    </div>
   </header>
 
   <nav class="projects" aria-label="Projeler">
@@ -27,8 +49,19 @@
   </nav>
 
   <main class="floor">
-    <div class="office-wrap">
-      <svg id="office" role="img" aria-label="Ofisin kuşbakışı görünümü"></svg>
+    <div class="terminal-mode" id="terminalMode" hidden>
+      <div class="tabs sub" role="tablist" aria-label="Terminal görünümü">
+        <button type="button" role="tab" id="subOffice" aria-selected="false">Ofis · ajanlar</button>
+        <button type="button" role="tab" id="subShell" aria-selected="true">Terminal</button>
+      </div>
+      <div class="office-wrap" id="termOfficeWrap" hidden>
+        <canvas id="termOffice" role="img" aria-label="Terminaldeki Claude ve alt ajanları"></canvas>
+        <p class="question" id="termQuestion" hidden></p>
+      </div>
+      <div class="terminal-wrap" id="terminalWrap"></div>
+    </div>
+    <div class="office-wrap" id="officeWrap">
+      <canvas id="office" role="img" aria-label="Ofisin çaprazdan görünümü"></canvas>
       <p class="question" id="question" hidden></p>
       <aside class="agent-card" id="agentCard" hidden>
         <button class="close" id="agentClose" type="button" aria-label="Kapat">×</button>
@@ -40,7 +73,9 @@
       </aside>
     </div>
 
-    <section class="voice" aria-label="Takım lideriyle konuş">
+    <ul class="roster" id="roster" aria-label="Ekip"></ul>
+
+    <section class="voice" aria-label="Daim ile konuş">
       <button class="orb" id="orb" type="button" data-state="idle" aria-label="Sesli konuşmayı başlat">
         <span class="orb-core"></span>
       </button>
@@ -50,7 +85,7 @@
         <p class="notice" id="notice" hidden></p>
       </div>
       <form class="say" id="sayForm">
-        <input id="sayText" type="text" placeholder="Ya da lidere yaz" autocomplete="off" aria-label="Lidere yaz">
+        <input id="sayText" type="text" placeholder="Ya da Daim'e yaz" autocomplete="off" aria-label="Daim'e yaz">
         <button type="submit">Gönder</button>
       </form>
       <button class="stop" id="stop" type="button">Dur <kbd>Esc</kbd></button>
@@ -58,14 +93,25 @@
   </main>
 
   <aside class="side">
-    <section class="panel talk">
-      <h2>Takım lideri</h2>
+    <div class="side-tabs" role="tablist" aria-label="Pano">
+      <button type="button" role="tab" data-pane="talk" aria-selected="true">Konuşma</button>
+      <button type="button" role="tab" data-pane="tasks" aria-selected="false">Görevler</button>
+      <button type="button" role="tab" data-pane="outputs" aria-selected="false">Çıktılar</button>
+      <button type="button" role="tab" data-pane="project" aria-selected="false">Proje</button>
+    </div>
+    <section class="panel" data-pane="talk">
       <div class="history" id="history" aria-label="Konuşma geçmişi"></div>
     </section>
-    <section class="panel board">
-      <h2>Görevler</h2>
+    <section class="panel" data-pane="outputs" hidden>
+      <ol class="outputs" id="outputs"></ol>
+      <p class="empty" id="outputsEmpty">Terminaldeki ekip bir işi bitirdiğinde Daim'in özeti ve tam rapor burada birikir.</p>
+    </section>
+    <section class="panel" data-pane="project" hidden>
+      <div class="project-info" id="projectInfo"></div>
+    </section>
+    <section class="panel" data-pane="tasks" hidden>
       <ol id="tasks"></ol>
-      <p class="empty" id="tasksEmpty">Henüz görev yok. Lidere ne yapılacağını söyle; planı sana okuyup onayını ister.</p>
+      <p class="empty" id="tasksEmpty">Henüz görev yok. Daim'e ne yapılacağını söyle; planı sana okuyup onayını ister.</p>
     </section>
   </aside>
 
@@ -80,6 +126,6 @@
     </article>
   </template>
 
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js?v=7"></script>
 </body>
 </html>

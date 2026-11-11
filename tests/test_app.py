@@ -80,10 +80,10 @@ def make_team(tmp_path, lead):
     return team
 
 
-def make_app(tmp_path, bridge, transcriber=None, synth=ok_synth, team=None, **kwargs):
+def make_app(tmp_path, bridge, transcriber=None, synth=ok_synth, team=None, config=None, **kwargs):
     projects = ProjectList(tmp_path / "projects.json", str(tmp_path), tmp_path / "no-claude-projects")
-    return create_app(Config(), team or make_team(tmp_path, bridge), projects, transcriber or FakeTranscriber(),
-                      synth, data_dir=tmp_path, token=TOKEN, **kwargs)
+    return create_app(config or Config(), team or make_team(tmp_path, bridge), projects,
+                      transcriber or FakeTranscriber(), synth, data_dir=tmp_path, token=TOKEN, **kwargs)
 
 
 def make_client(tmp_path, bridge, transcriber=None, synth=ok_synth, team=None):
@@ -116,7 +116,7 @@ def read_until(ws, kind):
 def test_status_reports_stt_device(client):
     with client.websocket_connect("/ws") as ws:
         status = ws.receive_json()
-    assert status == {"type": "status", "state": "ready", "detail": "", "stt_device": "cuda"}
+    assert status == {"type": "status", "state": "ready", "detail": "", "stt_device": "cuda", "live": False}
 
 
 def test_turn_streams_sentences_and_end(client, fake_bridge):
@@ -243,7 +243,7 @@ AUTH = {"X-Ekip-Token": TOKEN}
 def test_connect_sends_projects_team_and_chat(client, tmp_path):
     with client.websocket_connect("/ws") as ws:
         msgs = read_until(ws, "chat")
-    assert [m["type"] for m in msgs] == ["status", "projects", "team", "chat"]
+    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "away", "outputs", "chat"]
     assert msgs[1]["current"] == str(tmp_path)
     assert [a["id"] for a in msgs[2]["agents"]] == ["lider", "kidemli", "gelistirici", "testci", "asistan"]
     assert msgs[2]["agents"][4]["model"] == "claude-haiku-5-5"
@@ -309,3 +309,7 @@ def test_missing_claude_reports_error(tmp_path):
     with make_client(tmp_path, MissingClaude()) as c, c.websocket_connect("/ws") as ws:
         status = ws.receive_json()
     assert status["state"] == "error" and "claude" in status["detail"]
+
+
+def test_page_and_scripts_are_never_stale(client):
+    assert client.get("/").headers["cache-control"] == "no-cache"

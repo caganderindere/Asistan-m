@@ -10,6 +10,10 @@ class SessionStore:
     def __init__(self, path: Path) -> None:
         self._path = path
 
+    @property
+    def path(self) -> Path:
+        return self._path
+
     def load(self) -> str | None:
         try:
             return json.loads(self._path.read_text(encoding="utf-8")).get("session_id")

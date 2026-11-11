@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_VOCABULARY: tuple[str, ...] = (
     "Çağan",
-    "Jarvis",
+    "Daim",
     "Claude",
     "WordPress",
     "Nevka Kağıt",
@@ -22,8 +22,8 @@ DEFAULT_VOCABULARY: tuple[str, ...] = (
 # Which model each team member runs on: hard work on the strong model,
 # routine work on the cheap one.
 DEFAULT_MODELS: dict[str, str] = {
-    "lider": "claude-fable-5-2",
-    "kidemli": "claude-fable-5-2",
+    "lider": "claude-opus-5-5",
+    "kidemli": "claude-opus-5-5",
     "gelistirici": "claude-sonnet-5-5",
     "testci": "claude-sonnet-5-5",
     "asistan": "claude-haiku-5-5",
@@ -34,13 +34,26 @@ DEFAULT_MODELS: dict[str, str] = {
 class Config:
     port: int = 8765
     workdir: str = "D:\\"
-    # Jarvis: the male voice, a touch deeper than it comes.
+    # Daim: the male voice, a touch deeper than it comes.
     voice: str = "tr-TR-AhmetNeural"
     voice_rate: str = "+0%"
     voice_pitch: str = "-6Hz"
     whisper_model: str = "large-v3-turbo"
     vocabulary: tuple[str, ...] = DEFAULT_VOCABULARY
     models: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_MODELS))
+    # "gemini": Daim talks on Gemini and only coding work spends Claude tokens.
+    # "claude": Daim runs on models["lider"] like the rest of the team.
+    lead_backend: str = "gemini"
+    # Daim's voice: "live" talks over Gemini Live (speech to speech, about half a second);
+    # "classic" goes through Whisper, a text model and Edge TTS.
+    voice_engine: str = "live"
+    live_model: str = "gemini-3.1-flash-live-preview"
+    live_voice: str = "Charon"
+    # The model the embedded terminal's Claude Code starts on.
+    terminal_model: str = "claude-opus-5-5"
+    gemini_model: str = "gemini-3.5-flash-lite"
+    # Gemini 2.5 takes 0 to turn thinking off; 3.x models reject the setting, so None sends nothing.
+    gemini_thinking_budget: int | None = None
 
 
 def load_config(path: Path) -> Config:
