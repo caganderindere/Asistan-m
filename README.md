@@ -96,11 +96,28 @@ saate (hafıza), kitaplığa (proje belgeleri) ve toplantı masasına (akış) t
 Başlıktaki **Token · bugün** bugün harcanan Claude (bu bilgisayardaki tüm Claude Code
 oturumları) ve Gemini token'ını gösterir.
 
+## Tek Cuba, tek ofis
+
+Sesle, yazıyla ya da Telegram'dan konuştuğun hep aynı Cuba: aynı araçlar, aynı hafıza, günün
+tek konuşma geçmişi. Ofis açık projenin gerçek ekibini gösterir; **Terminal** sekmesi aynı
+projenin ham Claude Code ekranıdır ve oraya yazdığın doğrudan Claude Code'a gider.
+
+Cuba kendinden emin bir müdür: sana "patron" der, fikrini söyler. Sesini Hafıza sekmesindeki
+**Cuba'nın sesi** listesinden seçersin (varsayılan Algenib: kalın, pürüzlü).
+
+**Ekip büyür.** "Cuba, bir tasarımcı işe al" dersen yeni bir uzman alınır: Claude Code alt ajanı
+olur, ofiste boş masalardan birine oturur, toplantılarda kendi sesiyle konuşur (en fazla dört
+kişi; `data\ekip.json`). Kod yazan ajanın masasının üstünde yazdığı kod hologram olarak akar.
+
+**Toplantılar sesli.** Her ajan kendi sesiyle konuşur, konuşanın ağzı oynar. Ofisin üstündeki
+**Toplantı sesi** düğmesiyle kapatabilirsin.
+
 ## "Cuba" de, dinlesin
 
 Ses panelindeki **“Cuba” de** düğmesini açarsan küreye dokunmana gerek kalmaz: "Cuba" demen
-yeterli. Bir buçuk dakika kimse konuşmazsa uykuya döner. Chrome ya da Edge gerekir; ad
-tanıma tarayıcının kendi konuşma tanımasıyla yapılır (sesi Google/Microsoft'a gider).
+yeterli; iPhone'da ana ekran uygulamasında da çalışır. Ad bilgisayardaki Whisper ile tanınır,
+bekleme sırasında ses dışarı çıkmaz; düğme ne duyduğunu gösterir. Bir buçuk dakika kimse
+konuşmazsa uykuya döner.
 
 ## Telefondan
 

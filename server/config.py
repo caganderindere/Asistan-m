@@ -48,7 +48,7 @@ class Config:
     # "classic" goes through Whisper, a text model and Edge TTS.
     voice_engine: str = "live"
     live_model: str = "gemini-3.1-flash-live-preview"
-    live_voice: str = "Charon"
+    live_voice: str = "Algenib"  # a deep, gravelly director; changed on the Hafıza pane
     # The model the embedded terminal's Claude Code starts on.
     terminal_model: str = "claude-opus-5-5"
     gemini_model: str = "gemini-3.5-flash-lite"

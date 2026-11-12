@@ -19,16 +19,13 @@ from pathlib import Path
 
 import httpx
 
-from server.live import LIVE_TOOLS, CubaTools
-from server.usage import GEMINI
+from server.chat import CubaChat
+from server.live import CubaTools
 
 logger = logging.getLogger(__name__)
 
 BOT = "https://api.telegram.org/bot{token}/{method}"
 FILE = "https://api.telegram.org/file/bot{token}/{path}"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-KEPT_CONTENTS = 20
-MAX_TOOL_ROUNDS = 6
 MESSAGE_CHARS = 3900  # Telegram's limit is 4096
 ADAPTER = """
 # Şu an Telegram'dasın
@@ -57,16 +54,12 @@ class TelegramBot:
     ) -> None:
         self._path = settings_path
         self._settings = self._load()
-        self._gemini_key = gemini_key
-        self._model = model
-        self._tools = tools
         self._status = status
         self._toggle_away = toggle_away
         self._stop = stop
         self._heard = heard
-        self._diary = diary
         self._client = httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(70, connect=10))
-        self._contents: list[dict] = []
+        self._chat = CubaChat(gemini_key, model, tools, diary, ADAPTER, self._client)
         self._pending: dict[str, Callable[[str], None]] = {}  # approval id → what a button press does
         self.pair_code = "" if self.paired else f"{secrets.randbelow(900000) + 100000}"
 
@@ -143,7 +136,7 @@ class TelegramBot:
                 self._settings["chat_id"] = chat
                 self._save()
                 self.pair_code = ""
-                await self.send("Eşleşme tamam efendim. Artık buradan da benimleyiz.")
+                await self.send("Eşleşme tamam patron. Artık buradan da benimleyiz.")
             return
         if chat != self._settings["chat_id"]:
             return  # a stranger: no answer at all
@@ -153,9 +146,9 @@ class TelegramBot:
             await self.send(await self._toggle_away())
         elif text == "/dur":
             self._stop()
-            await self.send("Terminali durdurdum efendim.")
+            await self.send("Terminali durdurdum patron.")
         elif text.startswith("/start"):
-            await self.send("Buradayım efendim. Yazabilir ya da sesli mesaj atabilirsiniz.")
+            await self.send("Buradayım patron. Yaz ya da sesli mesaj at.")
         elif voice := message.get("voice") or message.get("audio"):
             audio = await self._download(voice["file_id"])
             mime = voice.get("mime_type") or "audio/ogg"
@@ -188,46 +181,15 @@ class TelegramBot:
     async def _converse(self, parts: list[dict], logged: str) -> None:
         if self._heard is not None:
             self._heard("Çağan", logged, "telegram")
-        contents = self._contents[-KEPT_CONTENTS:] + [{"role": "user", "parts": parts}]
-        # A history must start at the user's own words, not a tool reply.
-        while contents and not any("text" in p or "inlineData" in p for p in contents[0]["parts"]):
-            contents.pop(0)
-        reply = ""
         try:
-            for _ in range(MAX_TOOL_ROUNDS):
-                answer = await self._generate(contents)
-                contents.append({"role": "model", "parts": answer})
-                calls = [p["functionCall"] for p in answer if "functionCall" in p]
-                reply += "".join(p.get("text", "") for p in answer if not p.get("thought"))
-                if not calls:
-                    break
-                contents.append({"role": "user", "parts": [
-                    {"functionResponse": {"name": c.get("name", ""), "response": await self._tools.run(c.get("name", ""), c.get("args") or {})}}
-                    for c in calls
-                ]})
+            reply = await self._chat.reply(parts) or "Tamam patron."
         except (httpx.HTTPError, ValueError, KeyError) as error:
             logger.exception("telegram conversation failed")
-            await self.send(f"Gemini'ye ulaşamadım efendim ({type(error).__name__}).")
+            await self.send(f"Gemini'ye ulaşamadım patron ({type(error).__name__}).")
             return
-        # Audio is not kept: it is large, and what it said is in the reply.
-        self._contents = [c for c in contents if not any("inlineData" in p for p in c["parts"])][-KEPT_CONTENTS:]
-        reply = reply.strip() or "Tamam efendim."
         if self._heard is not None:
             self._heard("Cuba", reply, "telegram")
         await self.send(reply)
-
-    async def _generate(self, contents: list[dict]) -> list[dict]:
-        body = {
-            "systemInstruction": {"parts": [{"text": self._tools.prompt(self._diary()) + ADAPTER}]},
-            "contents": contents,
-            "tools": LIVE_TOOLS,
-        }
-        response = await self._client.post(GEMINI_URL.format(model=self._model), json=body,
-                                           headers={"x-goog-api-key": self._gemini_key})
-        response.raise_for_status()
-        data = response.json()
-        GEMINI.add(data.get("usageMetadata"))
-        return data["candidates"][0]["content"].get("parts", []) or [{"text": ""}]
 
     # ── Settings ────────────────────────────────────────────────
 

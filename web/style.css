@@ -114,27 +114,6 @@ body[data-away="true"] .topbar::after { background-image: linear-gradient(90deg,
   animation: spin 5s linear infinite;
 }
 
-.modes { display: flex; flex: none; padding: 3px; gap: 3px; background: rgb(255 255 255 / .04); border: 1px solid var(--line-2); border-radius: 12px; }
-.modes button {
-  display: flex; flex-direction: column; align-items: flex-start;
-  min-width: 138px;
-  padding: 6px 14px;
-  background: transparent;
-  border: 0;
-  border-radius: 9px;
-  color: var(--muted);
-  line-height: 1.2;
-  transition: background .2s, color .2s;
-}
-.modes button b { font: 600 12px/1.3 var(--display); letter-spacing: .1em; text-transform: uppercase; }
-.modes button small { font-size: 11px; opacity: .8; }
-.modes button:hover { background: rgb(255 255 255 / .05); color: var(--ink); }
-.modes button[aria-selected="true"] {
-  background: linear-gradient(180deg, rgb(79 216 255 / .22), rgb(79 216 255 / .08));
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px rgb(79 216 255 / .5), 0 0 16px rgb(79 216 255 / .2);
-}
-
 .top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; margin-left: auto; }
 .hud { display: flex; min-width: 0; gap: 2px; margin: 0; overflow: hidden; }
 .hud > div {
@@ -255,12 +234,39 @@ form button:hover { box-shadow: 0 0 12px rgb(79 216 255 / .35); }
 }
 .tabs button[aria-selected="true"] { color: var(--ink); background: var(--panel); border-color: rgb(79 216 255 / .4); }
 .terminal-wrap { flex: 1; min-height: 0; margin: 0 12px 10px; padding: 10px; background: #05080F; border: 1px solid var(--line-2); border-radius: 0 10px 10px 10px; }
-.terminal-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tabs.sub { padding-top: 10px; }
 .tabs.sub button { font-size: 12px; padding: 5px 12px; }
-.terminal-wrap[hidden], .office-wrap[hidden], .terminal-mode[hidden] { display: none; }
+.terminal-wrap[hidden], .office-wrap[hidden] { display: none; }
+.view-tabs { display: flex; align-items: center; gap: 4px; padding: 10px 12px 0; }
+.view-tabs [role="tab"] {
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  color: var(--muted);
+  font: 600 11px var(--display);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.view-tabs [role="tab"]:hover { color: var(--ink); }
+.view-tabs [role="tab"][aria-selected="true"] {
+  color: var(--ink);
+  background: linear-gradient(180deg, rgb(79 216 255 / .2), rgb(79 216 255 / .06));
+  border-color: rgb(79 216 255 / .5);
+}
+.meeting-voice {
+  margin-left: auto;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.meeting-voice[aria-pressed="true"] { color: var(--ink); border-color: rgb(57 224 155 / .5); }
+.terminal-wrap { margin-top: 10px; border-radius: 10px; }
 .office-wrap { position: relative; flex: 1; min-height: 0; padding: 12px; display: flex; }
-#office, #termOffice {
+#office {
   flex: 1;
   min-width: 0; min-height: 0;
   width: 100%; height: 100%;
@@ -594,7 +600,7 @@ body[data-mode="terminal"] .roster { display: none; }
   .projects { border-right: 0; border-bottom: 1px solid var(--line); }
   .projects ul { flex-direction: row; gap: 4px; overflow-x: auto; }
   .project { width: auto; max-width: 200px; flex: none; }
-  #office, #termOffice { aspect-ratio: 1635 / 1102; height: auto; }
+  #office { aspect-ratio: 1635 / 1102; height: auto; }
   .voice { flex-wrap: wrap; }
   .say { max-width: none; flex-basis: 100%; order: 5; }
   .side { border-left: 0; border-top: 1px solid var(--line); }
@@ -615,13 +621,11 @@ body[data-mode="terminal"] .roster { display: none; }
 @media (max-width: 640px) {
   .topbar { padding: max(8px, env(safe-area-inset-top)) 12px 8px; gap: 8px; }
   .brand small, .conn, #newSession { display: none; }
-  .modes button { min-width: 0; padding: 5px 10px; }
-  .modes button small { display: none; }
   .projects { padding: 10px 8px; }
   .projects h2, #addProject { display: none; }
   .projects .filter { display: none; }
   .office-wrap { padding: 8px; }
-  #office, #termOffice { aspect-ratio: auto; height: 46vh; }
+  #office { aspect-ratio: auto; height: 46vh; }
   .roster { padding: 0 8px 8px; }
   .voice {
     position: sticky;

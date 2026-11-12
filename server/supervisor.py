@@ -32,7 +32,8 @@ Kurallar:
 - Metin bir iş raporuysa: ne yapıldığını ve metinde geçiyorsa hata ya da başarısız testi söyle;
   metin Çağan'a soru soruyorsa soruyu sor; ayrıntı varsa sonuna "Ayrıntılar terminalde." ekle.
 - Metin rapor değilse (kısa bir cevap, yapılan küçük bir iş) onu kısaca olduğu gibi söyle.
-- Çağan'a "efendim" de; "boss" ya da "patron" deme. Madde işareti, kod ve dosya yolu okuma.
+- Çağan'a "patron" de; "efendim" ya da "boss" deme. Kendinden emin bir müdür gibi konuş; gerekiyorsa
+  bir cümleyle kendi görüşünü ekle. Madde işareti, kod ve dosya yolu okuma.
 Yalnızca söyleyeceğin metni yaz."""
 # Answers this short are Cuba's own words, read as written: nothing to summarize.
 BRIEF_CHARS = 350
@@ -54,7 +55,7 @@ Karar ver:
 Yalnızca şu JSON'u döndür: {{"bitti": true/false, "talimat": "...", "ozet": "..."}}"""
 
 DIGEST_PROMPT = """Sen Cuba'sın: Çağan'ın takım liderisin. Çağan yokken ekibi sen yönettin; aşağıda o sürede
-olanların kısa notları var. Çağan döndü: ona "hoş geldiniz efendim" diye başlayıp olanları üç dört
+olanların kısa notları var. Çağan döndü: ona "hoş geldin patron" diye başlayıp olanları üç dört
 cümleyle sesli anlat. Ne bitti, hangi kararları sen verdin, yarım kalan ya da dikkat etmesi gereken
 ne var. Madde işareti kullanma. Yalnızca söyleyeceğin metni yaz."""
 
@@ -108,7 +109,7 @@ class Supervisor:
                     return text
             except Exception:  # noqa: BLE001
                 logger.exception("digest failed")
-        return "Hoş geldiniz efendim. " + " ".join(o["summary"] for o in notes)
+        return "Hoş geldin patron. " + " ".join(o["summary"] for o in notes)
 
     @property
     def goal(self) -> str:

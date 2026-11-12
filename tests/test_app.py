@@ -246,7 +246,7 @@ AUTH = {"X-Ekip-Token": TOKEN}
 def test_connect_sends_projects_team_and_chat(client, tmp_path):
     with client.websocket_connect("/ws") as ws:
         msgs = read_until(ws, "chat")
-    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "terminals", "usage", "away", "outputs", "chat"]
+    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "terminals", "usage", "away", "outputs", "roster", "chat"]
     assert msgs[1]["current"] == str(tmp_path)
     assert [a["id"] for a in msgs[2]["agents"]] == ["lider", "kidemli", "gelistirici", "testci", "asistan"]
     assert msgs[2]["agents"][4]["model"] == "claude-haiku-5-5"
@@ -316,3 +316,51 @@ def test_missing_claude_reports_error(tmp_path):
 
 def test_page_and_scripts_are_never_stale(client):
     assert client.get("/").headers["cache-control"] == "no-cache"
+
+
+class FakeChat:
+    def __init__(self):
+        self.asked = []
+
+    async def reply(self, parts, on_tool=None):
+        self.asked.append(parts[0]["text"])
+        await on_tool("terminale_ver", {"proje": "x", "talimat": "y"})
+        return "Ekibe verdim patron."
+
+
+def test_typed_messages_go_to_the_same_cuba_and_the_day_is_one_conversation(tmp_path, fake_bridge):
+    chat = FakeChat()
+    app = make_app(tmp_path, fake_bridge, allowed_hosts=("127.0.0.1", "localhost", "testserver"), chat=chat)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        with client.websocket_connect("/ws") as ws:
+            read_until(ws, "chat")
+            ws.send_json({"type": "say", "text": "balbal'a başlık ekle"})
+            seen = read_until(ws, "turn_end")
+        assert chat.asked == ["balbal'a başlık ekle"] and fake_bridge.sent == []  # not the old lead
+        assert {"type": "text", "text": "Ekibe verdim patron."} in seen
+        assert any(m["type"] == "tool" and m["name"] == "terminale_ver" for m in seen)
+        with client.websocket_connect("/ws") as ws:
+            turns = read_until(ws, "chat")[-1]["turns"]
+    assert turns == [{"you": "balbal'a başlık ekle", "reply": "Ekibe verdim patron.", "channel": "yazı"}]
+
+
+def test_the_live_voice_is_chosen_from_the_list(client):
+    assert client.get("/api/settings").json()["live_voice"] == "Algenib"
+    bad = client.put("/api/settings", json={"live_voice": "Yok"})
+    good = client.put("/api/settings", json={"live_voice": "Orus"})
+    other_site = client.put("/api/settings", json={"live_voice": "Orus"}, headers={"Origin": "https://evil.example"})
+    assert (bad.status_code, good.status_code, other_site.status_code) == (400, 200, 403)
+    assert client.get("/api/settings").json()["live_voice"] == "Orus"
+
+
+def test_hiring_through_the_app_tells_the_page(tmp_path, fake_bridge):
+    rewrites = []
+    app = make_app(tmp_path, fake_bridge, allowed_hosts=("127.0.0.1", "localhost", "testserver"),
+                   rewrite_team=lambda: rewrites.append(1))
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        with client.websocket_connect("/ws") as ws:
+            read_until(ws, "chat")
+            result = client.portal.call(app.state.hire, "Tasarımcı", "arayüz", "opus")
+            roster = read_until(ws, "roster")[-1]
+    assert result["ok"] and rewrites == [1]
+    assert roster["members"][-1] == {"id": "tasarimci", "name": "Tasarımcı", "duty": "arayüz", "model": "opus", "hired": True}

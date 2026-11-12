@@ -27,14 +27,6 @@
       <span class="mark" aria-hidden="true"><i></i></span>
       <div><strong>CUBA</strong><small>Kişisel AI · Komuta merkezi</small></div>
     </div>
-    <div class="modes" role="tablist" aria-label="Çalışma biçimi">
-      <button type="button" role="tab" id="tabOffice" aria-selected="true">
-        <b>Sohbet</b><small>Cuba · Gemini</small>
-      </button>
-      <button type="button" role="tab" id="tabTerminal" aria-selected="false">
-        <b>Terminal</b><small>Claude Code</small>
-      </button>
-    </div>
     <div class="top-actions">
       <dl class="hud">
         <div title="Açık proje"><dt>Proje</dt><dd id="workdir">—</dd></div>
@@ -65,17 +57,14 @@
   </nav>
 
   <main class="floor">
-    <div class="terminal-mode" id="terminalMode" hidden>
-      <div class="tabs sub" role="tablist" aria-label="Terminal görünümü">
-        <button type="button" role="tab" id="subOffice" aria-selected="false">Ofis · ajanlar</button>
-        <button type="button" role="tab" id="subShell" aria-selected="true">Terminal</button>
-      </div>
-      <div class="office-wrap" id="termOfficeWrap" hidden>
-        <canvas id="termOffice" role="img" aria-label="Terminaldeki Claude ve alt ajanları"></canvas>
-        <p class="question" id="termQuestion" hidden></p>
-      </div>
-      <div class="terminal-wrap" id="terminalWrap"></div>
+    <div class="view-tabs" role="tablist" aria-label="Görünüm">
+      <button type="button" role="tab" id="tabOffice" aria-selected="true">Ofis</button>
+      <button type="button" role="tab" id="tabTerminal" aria-selected="false"
+              title="Açık projenin terminali: Claude Code'un ham çıktısı. Buraya yazdığın doğrudan Claude Code'a gider.">Terminal</button>
+      <button type="button" class="meeting-voice" id="meetingVoice" aria-pressed="true"
+              title="Ekip toplantılarını sesli dinle: her ajan kendi sesiyle konuşur.">🔊 <span>Toplantı sesi</span></button>
     </div>
+    <div class="terminal-wrap" id="terminalWrap" hidden></div>
     <div class="office-wrap" id="officeWrap">
       <canvas id="office" role="img" aria-label="Ofisin çaprazdan görünümü"></canvas>
       <p class="question" id="question" hidden></p>
@@ -136,6 +125,11 @@
       <div class="project-info" id="projectInfo"></div>
     </section>
     <section class="panel" data-pane="memory" hidden>
+      <div class="memory-head">
+        <label for="voicePick">Cuba'nın sesi</label>
+        <select id="voicePick" aria-describedby="voiceHint"></select>
+      </div>
+      <p class="hint" id="voiceHint">Yeni ses bir sonraki konuşmada (küreye dokununca) devreye girer.</p>
       <div class="memory-head">
         <label for="memoryFile">Defter</label>
         <select id="memoryFile">

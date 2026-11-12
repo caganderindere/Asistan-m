@@ -52,7 +52,7 @@ def main(reminder_id: str) -> int:
     show_notification(reminder.text)
     try:
         config = load_config(ROOT / "config.json")
-        speech = synthesize(f"Hatırlatma efendim: {reminder.text}", config.voice, config.voice_rate, config.voice_pitch)
+        speech = synthesize(f"Hatırlatma patron: {reminder.text}", config.voice, config.voice_rate, config.voice_pitch)
         wav = asyncio.run(speech)
         winsound.PlaySound(wav, winsound.SND_MEMORY)
     except Exception:

@@ -16,7 +16,6 @@ const openObject = (id) => { if (OBJECT_PANES[id]) showPane(OBJECT_PANES[id]); }
 const office = createOffice($('office'), (id) => { if (id !== 'cagan') selectAgent(id); }, openObject);
 const terminal = createTerminalView($('terminalWrap'));
 // The terminal's own office: Claude Code at the lead's desk, its subagents at the others.
-const termOffice = createOffice($('termOffice'), () => {}, openObject);
 const ESC = '\x1b';
 // Spoken answers to Claude Code's permission prompt in the terminal.
 const YES = new Set(['evet', 'onayla', 'onaylıyorum', 'tamam', 'olur', 'devam']);
@@ -49,7 +48,7 @@ let currentTurn = null;
 let ttsWarned = false;
 let cpuNoticeShown = false;
 let team = null; // the latest team snapshot
-let termTeam = null; // the latest snapshot of the terminal's Claude and its subagents
+let members = []; // everyone on the team, hires included
 let projectList = []; // every project, before the search box filters it
 let busyProjects = new Set(); // projects whose team is at work
 let openProjects = new Set(); // projects with a running terminal
@@ -65,7 +64,7 @@ let away = false; // Cuba decides in the user's place
 let hushed = false; // the user talked over Cuba: the rest of this turn is not read out
 // Louder than ordinary speech detection, so Cuba's own voice cannot interrupt it.
 const BARGE_IN_RMS = 0.03;
-let mode = 'office'; // office: speech goes to Cuba on Gemini; terminal: to Claude Code
+let mode = 'office'; // office: what is typed goes to Cuba; terminal: straight to Claude Code
 
 // Sentences are fetched as soon as they arrive and played strictly in order.
 const speechQueue = [];
@@ -124,7 +123,8 @@ function handle(msg) {
       showProjects(msg);
       break;
     case 'team':
-      showTeam(msg);
+      // With one Cuba on Gemini the office shows the project's real team; the old team only feeds the log.
+      if (liveAvailable) noteActivity('team', msg); else showTeam(msg);
       break;
     case 'terminal_team': {
       // Every project has its own terminal; the office shows the open project's.
@@ -132,13 +132,12 @@ function handle(msg) {
       crewOf.set(msg.project ?? project, msg);
       noteActivity(`terminal:${msg.project}`, msg, here ? '' : projectName(msg.project));
       showHud();
-      if (!here) break;
-      termTeam = msg;
-      termOffice.update(msg);
-      $('termQuestion').hidden = !msg.question;
-      $('termQuestion').textContent = msg.question;
+      if (here && liveAvailable) showTeam(msg);
       break;
     }
+    case 'roster':
+      members = msg.members;
+      break;
     case 'terminals':
       busyProjects = new Set(msg.busy);
       openProjects = new Set(msg.open);
@@ -159,9 +158,10 @@ function handle(msg) {
       break;
     case 'meeting':
       // The team has finished talking; what was said stays in the conversation.
-      if (!msg.project) { liveMeeting?.remove(); liveMeeting = null; }
+      liveMeeting?.remove();
+      liveMeeting = null;
       history.append(meetingBlock(msg.lines, '', msg.names, msg.decisions, msg.project && projectName(msg.project)));
-      if (msg.decisions?.length) { decisions.push(...msg.decisions); office.setDecisions(decisions); termOffice.setDecisions(decisions); }
+      if (msg.decisions?.length) { decisions.push(...msg.decisions); office.setDecisions(decisions); }
       scrollHistory();
       break;
     case 'notice':
@@ -203,7 +203,7 @@ function handle(msg) {
       break;
     case 'outputs':
       // A new report: the office printer prints it (not on the first load).
-      if (outputCount !== null && msg.items.length > outputCount) { office.print(); termOffice.print(); }
+      if (outputCount !== null && msg.items.length > outputCount) office.print();
       outputCount = msg.items.length;
       showOutputs(msg.items);
       break;
@@ -259,7 +259,7 @@ function showProjects({ current, projects }) {
   projectList = projects;
   // The terminal office follows the open project.
   const crew = crewOf.get(current);
-  if (crew) { termTeam = crew; termOffice.update(crew); }
+  if (crew && liveAvailable) showTeam(crew);
   const open = projects.find((p) => p.path === current);
   $('workdir').textContent = open?.name ?? current;
   $('workdir').title = current;
@@ -330,7 +330,7 @@ function showRoster({ agents, review, phase }) {
 }
 
 function meetingBlock(lines, speaker = '', given = null, decided = [], where = '') {
-  const names = given ?? Object.fromEntries((team?.agents ?? []).map((a) => [a.id, a.name]));
+  const names = given ?? team?.review?.names ?? Object.fromEntries((team?.agents ?? []).map((a) => [a.id, a.name]));
   const block = document.createElement('article');
   block.className = 'meeting';
   block.append(Object.assign(document.createElement('h3'), { textContent: where ? `Ekip toplantısı · ${where}` : 'Ekip toplantısı' }));
@@ -424,7 +424,6 @@ const short = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math
 
 function showUsage({ claude, gemini }) {
   office.setUsage({ claude, gemini });
-  termOffice.setUsage({ claude, gemini });
   const hud = $('hudTokens');
   hud.textContent = `C ${short(claude.input + claude.output)} · G ${short(gemini.input + gemini.output)}`;
   hud.title = `Claude: giriş ${claude.input.toLocaleString('tr-TR')}, çıkış ${claude.output.toLocaleString('tr-TR')}, `
@@ -440,8 +439,58 @@ function tick() {
 tick();
 setInterval(tick, 10_000);
 
+// ── Meetings out loud ───────────────────────────────────────
+
+let meetingVoice = true;
+try { meetingVoice = localStorage.getItem('cuba.meetingVoice') !== '0'; } catch { /* private window */ }
+const meetingQueue = [];
+const meetingHeard = new Map(); // meeting (by its first line) → lines already queued
+let meetingPlaying = false;
+
+function hearMeeting(snapshot) {
+  const lines = snapshot.review?.lines ?? [];
+  if (!lines.length) return;
+  const key = `${snapshot.project ?? ''}:${lines[0].text}`;
+  const heard = meetingHeard.get(key) ?? 0;
+  meetingHeard.set(key, lines.length);
+  if (!meetingVoice || document.hidden) return;
+  meetingQueue.push(...lines.slice(heard));
+  playMeeting();
+}
+
+async function playMeeting() {
+  if (meetingPlaying) return;
+  meetingPlaying = true;
+  while (meetingQueue.length && meetingVoice) {
+    const { who, text } = meetingQueue.shift();
+    try {
+      const r = await fetch('/api/tts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, who }),
+      });
+      if (!r.ok) continue;
+      const audio = new Audio(URL.createObjectURL(await r.blob()));
+      await new Promise((done) => { audio.onended = audio.onerror = done; audio.play().catch(done); });
+      URL.revokeObjectURL(audio.src);
+    } catch { /* a missing line is not worth stopping the meeting for */ }
+  }
+  meetingPlaying = false;
+}
+
+function showMeetingVoice() {
+  $('meetingVoice').setAttribute('aria-pressed', String(meetingVoice));
+  $('meetingVoice').querySelector('span').textContent = meetingVoice ? 'Toplantı sesi' : 'Toplantı sessiz';
+}
+$('meetingVoice').addEventListener('click', () => {
+  meetingVoice = !meetingVoice;
+  if (!meetingVoice) meetingQueue.length = 0;
+  try { localStorage.setItem('cuba.meetingVoice', meetingVoice ? '1' : '0'); } catch { /* private window */ }
+  showMeetingVoice();
+});
+showMeetingVoice();
+
 function showTeam(snapshot) {
   team = snapshot;
+  hearMeeting(snapshot);
   noteActivity('team', snapshot);
   showHud();
   office.update(snapshot);
@@ -1022,7 +1071,8 @@ $('sayForm').addEventListener('submit', (e) => {
   if (!text) return;
   if (ws?.readyState !== WebSocket.OPEN) { showNotice('Sunucuya bağlı değil.'); return; }
   input.value = '';
-  if (live.active) {
+  if (live.active && mode !== 'terminal') {
+    // On the live line Cuba answers out loud; the words show up as it speaks.
     currentTurn = addTurn(text);
     live.sendText(text);
     return;
@@ -1039,23 +1089,11 @@ function showMode(next) {
   $('tabOffice').setAttribute('aria-selected', String(next === 'office'));
   $('tabTerminal').setAttribute('aria-selected', String(next === 'terminal'));
   $('officeWrap').hidden = next !== 'office';
-  $('terminalMode').hidden = next !== 'terminal';
-  $('sayText').placeholder = next === 'terminal' ? "Ya da Claude Code'a yaz" : "Ya da Cuba'ya yaz";
-  if (next === 'terminal') showSubTab(subTab);
+  $('terminalWrap').hidden = next !== 'terminal';
+  $('sayText').placeholder = next === 'terminal' ? "Claude Code'a doğrudan yaz" : "Ya da Cuba'ya yaz";
+  if (next === 'terminal') terminal.show();
 }
 
-let subTab = 'shell';
-function showSubTab(next) {
-  subTab = next;
-  $('subOffice').setAttribute('aria-selected', String(next === 'office'));
-  $('subShell').setAttribute('aria-selected', String(next === 'shell'));
-  $('termOfficeWrap').hidden = next !== 'office';
-  $('terminalWrap').hidden = next !== 'shell';
-  // The terminal connects on first view, so Claude starts even while the office is shown.
-  terminal.show();
-}
-$('subOffice').addEventListener('click', () => showSubTab('office'));
-$('subShell').addEventListener('click', () => showSubTab('shell'));
 function showAway({ on, turns, max }) {
   away = on;
   document.body.dataset.away = String(on);
@@ -1144,7 +1182,27 @@ async function showProject() {
 // ── Memory: what Cuba knows about Çağan, and its diary ─────
 
 let memoryFiles = {};
+async function showVoices() {
+  try {
+    const { live_voice: current, voices } = await (await fetch('/api/settings')).json();
+    $('voicePick').replaceChildren(...Object.entries(voices).map(([name, what]) => {
+      const option = Object.assign(document.createElement('option'), { value: name, textContent: `${name} — ${what}` });
+      option.selected = name === current;
+      return option;
+    }));
+  } catch { /* settings are optional */ }
+}
+$('voicePick').addEventListener('change', async () => {
+  const response = await fetch('/api/settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ live_voice: $('voicePick').value }),
+  }).catch(() => null);
+  $('voiceHint').textContent = response?.ok
+    ? `Tamam. ${$('voicePick').value} bir sonraki konuşmada devrede${live.active ? ' — şimdiki konuşmayı kapatıp yeniden başlat' : ''}.`
+    : 'Ses kaydedilemedi.';
+});
+
 async function showMemory() {
+  showVoices();
   let data;
   try {
     data = await (await fetch('/api/memory')).json();

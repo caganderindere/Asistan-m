@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from server.config import ROOT
-from server.team import LEAD, ROLES
+from server.team import LEAD, ROLES, Role
 
 ASSISTANT = ROOT / "asistan" / "ASISTAN.md"
 PROFILE = ROOT / "asistan" / "cagan.md"  # what Cuba has learned about Çağan
@@ -62,9 +62,15 @@ def _model_alias(model: str) -> str:
     return "inherit"
 
 
-def write_terminal_team(out_dir: Path, models: Mapping[str, str]) -> tuple[Path, Path]:
-    """Write the terminal Claude's charter and the plugin holding its team; return both paths."""
-    workers = [role for role in ROLES if role.id != LEAD]
+def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> tuple[Path, Path]:
+    """Write the terminal Claude's charter and the plugin holding its team; return both paths.
+
+    *hires* are the members Cuba took on later (server/roster.py); they join as subagents too.
+    """
+    from server.roster import MODELS
+
+    workers = [role for role in ROLES if role.id != LEAD] + [Role(h.id, h.name, "Yeni ekip", h.duty) for h in hires]
+    models = {**models, **{h.id: MODELS[h.model] for h in hires}}
     roster = "\n".join(
         f"- `{role.id}`: {role.name}, {role.department}, model {models.get(role.id, '?')}. {role.duty}"
         for role in workers
@@ -83,6 +89,8 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str]) -> tuple[Path,
     )
     agents = plugin / "agents"
     agents.mkdir(exist_ok=True)
+    for old in agents.glob("*.md"):
+        old.unlink()  # someone who left the team is no longer a subagent
     worker = (TEMPLATES / "CALISAN.md").read_text(encoding="utf-8")
     for role in workers:
         body = (

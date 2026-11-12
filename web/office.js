@@ -37,10 +37,18 @@ const PEOPLE = {
   // The boss: not in the team's snapshots, so the office adds him itself.
   cagan:       { short: 'Çağan',       color: '#C9D6EE', hair: '#241C17', desk: [255, 110], meeting: [614, 140], coffee: [1150, 160], sofa: [1000, 465], visit: [255, 110] },
 };
+// The four empty desks new hires take, in order: where they sit, meet, drink coffee, rest, visit.
+const HIRE_SLOTS = [
+  { color: '#B07CFF', hair: '#2A1E16', desk: [445, 676], meeting: [490, 72],  coffee: [990, 130],  sofa: [960, 600],  visit: [45, 190] },
+  { color: '#FFE066', hair: '#5A3A22', desk: [130, 656], meeting: [490, 210], coffee: [1045, 130], sofa: [1030, 560], visit: [280, 190] },
+  { color: '#5CE1E6', hair: '#1B1612', desk: [800, 246], meeting: [340, 210], coffee: [1100, 140], sofa: [880, 640],  visit: [140, 262] },
+  { color: '#FF6B6B', hair: '#3B2A1F', desk: [640, 620], meeting: [640, 210], coffee: [1000, 300], sofa: [1090, 500], visit: [190, 262] },
+];
 // Spots where one stands; everywhere else there is a seat.
 const STANDING = new Set([
   '1000,84', '1052,84', '1104,84', '1150,160',
   '70,240', '115,248', '215,248', '260,240', '255,110',
+  ...HIRE_SLOTS.flatMap((s) => [s.meeting, s.coffee, s.visit].map(String)),
 ]);
 const BOSS = { id: 'cagan', name: 'Çağan', state: 'idle', activity: '', seconds: 0, log: [] };
 
@@ -164,6 +172,9 @@ function furniture() {
     { face: 'east', a0: 26 + i * 36, a1: 30 + i * 36, z0: 50, z1: 54, color: i % 2 ? '#39E09B' : '#FFB547' },
   ]);
   plant(916, 244);
+  box(745, 190, 110, 40, 24, '#33415E');
+  box(778, 196, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot2' });
+  chair(800, 246);
   // Reports come out here.
   box(698, 206, 36, 28, 30, '#3A4766', { printer: true });
 
@@ -190,13 +201,21 @@ function furniture() {
   desk('kidemli', 65, 432, 160, 62, 2);
   desk('gelistirici', 295, 432, 160, 62);
   chair(145, 516); chair(375, 516);
-  box(400, 600, 90, 60, 24, '#33415E');                                   // spare desk
-  box(423, 610, 44, 4, 24, '#0B111C', { z0: 24 });
+  // Desks waiting for new hires; a screen lights up once someone sits there.
+  box(400, 600, 90, 60, 24, '#33415E');
+  box(423, 610, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot0' });
+  chair(445, 676);
+  box(70, 590, 120, 50, 24, '#33415E');
+  box(108, 598, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot1' });
+  chair(130, 656);
   plant(492, 380, 1.1); plant(496, 674, 1.1);
 
   // Destek
   desk('asistan', 575, 430, 150, 58);
   chair(650, 510);
+  box(585, 560, 110, 45, 24, '#33415E');
+  box(618, 566, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot3' });
+  chair(640, 620);
   const cabinets = box(536, 600, 46, 84, 42, '#2C3A52');
   cabinets.decor = [0, 1, 2].map((i) => ({ face: 'east', a0: 4 + i * 27, a1: 26 + i * 27, z0: 6, z1: 36, color: '#3E4E6E' }));
   box(700, 640, 60, 44, 22, '#33415E');
@@ -359,9 +378,9 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
 
   function bubbleOf(agent, spot, snapshot) {
     if (snapshot.phase === 'review' && spot === 'meeting') {
-      if (snapshot.review.speaker === agent.id) return '…';
       const last = snapshot.review.lines.at(-1);
-      return last?.who === agent.id ? shorten(last.text, 160) : '';
+      if (last?.who === agent.id) return shorten(last.text, 160);
+      return snapshot.review.speaker === agent.id ? '…' : '';
     }
     if (agent.id === 'lider' && snapshot.question) return '?';
     if (agent.state === 'error') return 'Hata';
@@ -371,8 +390,15 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
   function arrange() {
     if (!latest) return;
     for (const agent of latest.agents) {
-      const person = people[agent.id];
-      if (!person) continue;
+      let person = people[agent.id];
+      if (!person) {
+        const taken = new Set(Object.values(people).map((p) => p.slot));
+        const slot = HIRE_SLOTS.findIndex((_, i) => !taken.has(i));
+        if (slot < 0) continue;
+        const spec = { ...HIRE_SLOTS[slot], short: agent.name };
+        person = people[agent.id] = { id: agent.id, spec, kind: 'person', x: spec.sofa[0], y: spec.sofa[1], path: [],
+          seated: true, placed: false, state: 'idle', says: '', spot: 'sofa', slot };
+      }
       const spot = spotOf(agent, latest);
       const target = person.spec[spot];
       const goal = person.path.at(-1) ?? [person.x, person.y];
@@ -401,8 +427,12 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
       person.spot = spot;
       person.saying = person.quote && performance.now() < person.quoteUntil;
       person.says = person.saying ? person.quote : bubbleOf(agent, spot, latest);
+      person.talking = latest.phase === 'review' && latest.review?.speaker === agent.id && spot === 'meeting';
+      person.code = agent.state === 'working' && spot === 'desk' ? agent.code ?? '' : '';
+      person.file = agent.file ?? '';
     }
-    lit = new Set(latest.agents.filter((a) => a.state === 'working' && people[a.id]?.spot === 'desk').map((a) => a.id));
+    lit = new Set(latest.agents.filter((a) => a.state === 'working' && people[a.id]?.spot === 'desk')
+      .map((a) => (people[a.id].slot != null ? `slot${people[a.id].slot}` : a.id)));
     if (latest.phase === 'meeting' || latest.phase === 'review') lit.add('wallScreen');
     dirty = true;
   }
@@ -539,6 +569,13 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
     ctx.arc(hx, hy - 1.5, 9.2, Math.PI * 1.02, Math.PI * 1.98);
     ctx.fillStyle = p.spec.hair;
     ctx.fill();
+    if (p.talking) {
+      const open = calm.matches ? 1.6 : 0.6 + Math.abs(Math.sin(time / 90)) * 2.4;
+      ctx.beginPath();
+      ctx.ellipse(hx + 2.5, hy + 4, 2.8, open, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#5A1E1E';
+      ctx.fill();
+    }
     p.head = [hx, hy];
   }
 
@@ -693,12 +730,42 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
         bubble(x, above - 10, p.says, p.spec.color);
       }
       p.hit = [x, y];
+      if (p.code && !p.path.length) drawCode(x, above - (p.says ? 74 : 16), p);
     }
     if (performance.now() - printedAt < PRINT_MS) {
       const [x, y] = onScreen(iso(716, 220, 60));
       ctx.font = '600 11px Bahnschrift, "Segoe UI", sans-serif';
       pill(x, y, '🖨 Rapor hazır', HUD, INK, NEON);
     }
+  }
+
+  /** A hologram of the code someone is writing: a few lines rolling past, the file on top. */
+  function drawCode(x, bottom, p) {
+    const lines = p.code.split('\n').map((l) => (l.length > 38 ? `${l.slice(0, 37)}…` : l));
+    const shown = 6;
+    const start = calm.matches || lines.length <= shown ? 0 : Math.floor(performance.now() / 900) % (lines.length - shown + 1);
+    const view = lines.slice(start, start + shown);
+    const width = 230;
+    const height = 20 + view.length * 13;
+    const top = bottom - height;
+    ctx.save();
+    ctx.globalAlpha = .9;
+    ctx.beginPath();
+    ctx.roundRect(x - width / 2, top, width, height, 6);
+    ctx.fillStyle = 'rgb(6 20 38 / .82)';
+    ctx.fill();
+    ctx.strokeStyle = p.spec.color;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.font = '600 10px Bahnschrift, "Segoe UI", sans-serif';
+    ctx.fillStyle = p.spec.color;
+    ctx.fillText(`✎ ${p.file || 'kod'}`, x - width / 2 + 8, top + 10);
+    ctx.font = '10px "JetBrains Mono", Consolas, monospace';
+    ctx.fillStyle = '#9FF0FF';
+    view.forEach((line, i) => ctx.fillText(line, x - width / 2 + 8, top + 24 + i * 13));
+    ctx.restore();
+    ctx.textAlign = 'center';
   }
 
   /** The meeting room's screen doubles as the team's board: who is on what. */
@@ -902,7 +969,7 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
     update(snapshot) { latest = { ...snapshot, agents: [...snapshot.agents, BOSS] }; seenAt = Date.now(); arrange(); },
     select(id) { selected = id; dirty = true; },
     where(agent) { return latest ? describe(agent, spotOf(agent, latest), latest) : ''; },
-    color(id) { return PEOPLE[id]?.color ?? '#7F8DA6'; },
+    color(id) { return PEOPLE[id]?.color ?? people[id]?.spec.color ?? '#7F8DA6'; },
     /** A report came out: the printer prints it. */
     print() { printedAt = performance.now(); dirty = true; },
     setUsage(next) { usage = next; dirty = true; },

@@ -24,7 +24,7 @@ HOOK = ROOT / "tools" / "terminal_hook.py"
 SCROLLBACK_CHARS = 200_000
 SPOKEN_LIMIT = 400
 MORE_ON_SCREEN = "Ayrıntılar ekranda."
-PERMISSION_LINE = "Onayın gerekiyor efendim. Evet ya da hayır de."
+PERMISSION_LINE = "Onayın gerekiyor patron. Evet ya da hayır de."
 # Claude Code starts a subagent with one of these tools.
 AGENT_TOOLS = ("Task", "Agent")
 # The office's desks: the lead's for Claude itself, the others for its subagents.
@@ -32,6 +32,9 @@ LEAD_DESK = "lider"
 SUB_DESKS = ("kidemli", "gelistirici", "testci", "asistan")
 LOG_LINES = 12
 ROLE_NAMES = {"kidemli": "Kıdemli", "gelistirici": "Geliştirici", "testci": "Testçi", "asistan": "Asistan"}
+# Tools that write code: what they write floats over the writer's desk.
+CODE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+CODE_LINES = 14
 
 
 def hook_settings(
@@ -234,18 +237,26 @@ def tool_summary(tool_input: dict) -> str:
 class TerminalCrew:
     """Who in the terminal's Claude session is doing what, drawn as the office's people."""
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self, clock: Callable[[], float] = time.monotonic, names: Callable[[], dict[str, str]] = lambda: ROLE_NAMES
+    ) -> None:
         self._clock = clock
+        self._names = names  # every member's id → name, hires included
         self.question = ""
         self.reports: list[dict] = []  # what each subagent handed back this turn: {who, name, text}
         self.review: dict | None = None  # the meeting going on: {members, speaker, lines}
         self.tasks: list[dict] = []  # work the last meeting proposed
-        self._desks = {
-            desk: {"name": "Claude Code" if desk == LEAD_DESK else "Alt ajan", "state": "idle",
-                   "activity": "", "since": clock(), "key": "", "agent": "",
-                   "log": deque(maxlen=LOG_LINES)}
-            for desk in (LEAD_DESK, *SUB_DESKS)
-        }
+        self._desks: dict[str, dict] = {}
+        for desk in (LEAD_DESK, *SUB_DESKS):
+            self._add_desk(desk, "Cuba" if desk == LEAD_DESK else names().get(desk, "Alt ajan"))
+
+    def _add_desk(self, desk: str, name: str) -> None:
+        self._desks[desk] = {"name": name, "state": "idle", "activity": "", "since": self._clock(), "key": "",
+                             "agent": "", "code": "", "file": "", "log": deque(maxlen=LOG_LINES)}
+
+    @property
+    def _subs(self) -> list[str]:
+        return [d for d in self._desks if d != LEAD_DESK]
 
     def prompt(self) -> None:
         self.question = ""
@@ -255,23 +266,30 @@ class TerminalCrew:
     def tool(self, name: str, tool_input: dict, use_id: str = "", agent: str = "") -> None:
         summary = tool_summary(tool_input)
         if name in AGENT_TOOLS:
+            role = str(tool_input.get("subagent_type") or "").rpartition(":")[2]
+            names = self._names()
+            if role in names and role not in self._desks:
+                self._add_desk(role, names[role])  # someone hired since this terminal opened
             free = next((d for d in SUB_DESKS if self._desks[d]["state"] == "idle"), None)
             self._work(LEAD_DESK, f"Ajan başlattı: {summary}")
             # A team member sits at its own desk when it is free.
-            role = str(tool_input.get("subagent_type") or "").rpartition(":")[2]
-            if role in SUB_DESKS and self._desks[role]["state"] == "idle":
+            if role in self._desks and role != LEAD_DESK and self._desks[role]["state"] == "idle":
                 free = role
             if free is not None:
-                name = ROLE_NAMES.get(role) or role or "Alt ajan"
-                self._desks[free].update(key=use_id, agent="", name=name)
+                self._desks[free].update(key=use_id, agent="", name=names.get(role) or role or "Alt ajan")
                 self._work(free, summary or "Görevde")
             return
-        self._work(self._desk_of(agent), f"{name}: {summary}" if summary else name)
+        desk = self._desk_of(agent)
+        self._work(desk, f"{name}: {summary}" if summary else name)
+        code = str(tool_input.get("new_string") or tool_input.get("content") or tool_input.get("new_source") or "")
+        if name in CODE_TOOLS and code.strip():
+            path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+            self._desks[desk].update(code="\n".join(code.splitlines()[:CODE_LINES]), file=os.path.basename(path))
 
     def tool_done(self, name: str, use_id: str, result: str = "") -> None:
         if name not in AGENT_TOOLS:
             return
-        for desk_id in SUB_DESKS:
+        for desk_id in self._subs:
             if self._desks[desk_id]["key"] == use_id:
                 if result.strip():
                     self.reports.append({"who": desk_id, "name": self._desks[desk_id]["name"], "text": result.strip()})
@@ -289,7 +307,18 @@ class TerminalCrew:
     def permission(self) -> None:
         self.question = "Claude onayını bekliyor."
 
+    def _sync_staff(self) -> None:
+        """Hires get a desk at once; someone who left goes once their desk is free."""
+        names = self._names()
+        for member, name in names.items():
+            if member not in self._desks:
+                self._add_desk(member, name)
+        for desk in [d for d in self._desks if d not in (LEAD_DESK, *SUB_DESKS) and d not in names]:
+            if self._desks[desk]["state"] != "working":
+                del self._desks[desk]
+
     def snapshot(self) -> dict:
+        self._sync_staff()
         now = self._clock()
         working = any(d["state"] == "working" for d in self._desks.values())
         return {
@@ -301,7 +330,7 @@ class TerminalCrew:
             "agents": [
                 {"id": desk_id, "name": d["name"], "department": "Terminal", "duty": "", "model": "",
                  "state": d["state"], "activity": d["activity"], "seconds": round(now - d["since"]),
-                 "task": None, "log": list(d["log"])}
+                 "task": None, "log": list(d["log"]), "code": d["code"], "file": d["file"]}
                 for desk_id, d in self._desks.items()
             ],
         }
@@ -310,7 +339,7 @@ class TerminalCrew:
         """The desk of the subagent behind *agent*; Claude itself when there is none."""
         if not agent:
             return LEAD_DESK
-        busy = [d for d in SUB_DESKS if self._desks[d]["state"] == "working"]
+        busy = [d for d in self._subs if self._desks[d]["state"] == "working"]
         for desk_id in busy:
             if self._desks[desk_id]["agent"] == agent:
                 return desk_id
@@ -332,4 +361,4 @@ class TerminalCrew:
         desk = self._desks[desk_id]
         if desk["state"] == "working":
             desk["since"] = self._clock()
-        desk.update(state="idle", activity="", key="", agent="")
+        desk.update(state="idle", activity="", key="", agent="", code="", file="")

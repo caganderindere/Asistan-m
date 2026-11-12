@@ -45,6 +45,25 @@ LIVE_TOOLS = [{"functionDeclarations": [
         },
     },
     {
+        "name": "ise_al",
+        "description": "Ekibe yeni bir üye alır: kendi masası, sesi ve uzmanlığı olan yeni bir alt ajan.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ad": {"type": "string", "description": "Kısa unvan, örneğin Tasarımcı, Güvenlikçi, Veritabancı."},
+                "gorev": {"type": "string", "description": "Ne iş yapacağı, tek cümle."},
+                "model": {"type": "string", "enum": ["opus", "sonnet", "haiku"],
+                          "description": "Zor iş için opus, olağan iş için sonnet, basit iş için haiku."},
+            },
+            "required": ["ad", "gorev"],
+        },
+    },
+    {
+        "name": "isten_cikar",
+        "description": "Sonradan işe alınmış bir üyeyi ekipten çıkarır.",
+        "parameters": {"type": "object", "properties": {"ad": {"type": "string"}}, "required": ["ad"]},
+    },
+    {
         "name": "terminal_tus",
         "description": "Terminaldeki ekibe onay verir, reddeder ya da durdurur.",
         "parameters": {
@@ -107,9 +126,13 @@ class CubaTools:
         memory_dir: Path = MEMORY_DIR,
         runner: Callable = run_program,
         projects: Callable[[], dict] = dict,
+        hire: Callable[..., Awaitable[dict]] | None = None,
+        fire: Callable[[str], Awaitable[dict]] | None = None,
     ) -> None:
         self._hand_over = hand_over
         self._press = press
+        self._hire = hire
+        self._fire = fire
         self.memory_dir = memory_dir
         self._runner = runner
         self.projects = projects  # the project listing, as the browser gets it
@@ -130,6 +153,10 @@ class CubaTools:
                     return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
                 await self._hand_over(str(args["talimat"]).strip(), folder)
                 return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+            if name == "ise_al" and self._hire is not None:
+                return await self._hire(str(args.get("ad", "")), str(args.get("gorev", "")), str(args.get("model") or "sonnet"))
+            if name == "isten_cikar" and self._fire is not None:
+                return await self._fire(str(args.get("ad", "")))
             if name == "terminal_tus" and args.get("tus") in TERMINAL_KEYS:
                 self._press(TERMINAL_KEYS[args["tus"]])
                 return {"ok": True}
@@ -158,6 +185,7 @@ class LiveHub:
         projects: Callable[[], dict] = dict,
         heard: Callable[[str, str], None] | None = None,
         diary: Callable[[], str] = str,
+        tools: CubaTools | None = None,
     ) -> None:
         self._key = api_key
         self._model = model
@@ -168,7 +196,7 @@ class LiveHub:
         self._memory_dir = memory_dir
         self._runner = runner
         self._projects = projects  # the project listing, as the browser gets it
-        self.tools = CubaTools(hand_over, press, memory_dir, runner, projects)
+        self.tools = tools or CubaTools(hand_over, press, memory_dir, runner, projects)
         self._heard = heard  # gets each finished line: ("Çağan" | "Cuba", text)
         self._diary = diary  # yesterday's diary page, so Cuba remembers it
         self._said = {"Çağan": "", "Cuba": ""}  # the current turn's words, coming in pieces
@@ -232,7 +260,8 @@ class LiveHub:
             "model": f"models/{self._model}",
             "generationConfig": {
                 "responseModalities": ["AUDIO"],
-                "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self._voice}}},
+                "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {
+                    "voiceName": self._voice() if callable(self._voice) else self._voice}}},
             },
             "systemInstruction": {"parts": [{"text": self.tools.prompt(self._diary())}]},
             "tools": LIVE_TOOLS,

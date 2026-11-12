@@ -39,8 +39,9 @@ from server.meeting import hold_meeting
 from server.memory import ConversationLog, Diary, ensure_profile
 from server.supervisor import Supervisor
 from server.terminal import (
-    AGENT_TOOLS, LEAD_DESK, PERMISSION_LINE, ROLE_NAMES, Terminal, TerminalCrew, TerminalPool, folder_key,
+    AGENT_TOOLS, LEAD_DESK, PERMISSION_LINE, Terminal, TerminalCrew, TerminalPool, folder_key,
 )
+from server.roster import Roster
 from server.usage import GEMINI, ClaudeMeter
 
 logger = logging.getLogger(__name__)
@@ -52,11 +53,20 @@ OFFICE_PEOPLE = {"lider", "kidemli", "gelistirici", "testci", "asistan", "cagan"
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 USAGE_EVERY_S = 30
 DIARY_EVERY_S = 600
-MEETING_PACE_S = 3.5  # a line of the meeting every few seconds, so it can be followed
-DUTIES = {
-    "kidemli": "zor mimari ve kritik kod", "gelistirici": "kodu yazar", "testci": "test eder ve doğrular",
-    "asistan": "belge, araştırma ve küçük işler",
+MEETING_PACE_S = 3.5  # at least this long per line of a meeting, so it can be followed
+SPOKEN_CHARS_PER_S = 13  # a longer line waits until it has been said aloud
+# Gemini Live voices Cuba can speak with, deep ones first; chosen on the Hafıza pane.
+LIVE_VOICES = {
+    "Algenib": "Kalın, pürüzlü — müdür sesi",
+    "Orus": "Tok ve kararlı",
+    "Alnilam": "Sert ve net",
+    "Charon": "Sakin, bilgilendirici",
+    "Rasalgethi": "Olgun, anlatıcı",
+    "Sadaltager": "Bilgili, ölçülü",
+    "Fenrir": "Enerjik",
+    "Iapetus": "Berrak",
 }
+DEFAULT_LIVE_VOICE = "Algenib"
 CLAUDE_MISSING = (
     "Claude Code bulunamadı ya da giriş yapılmamış. Bir terminalde 'claude' yazıp giriş yapın."
 )
@@ -67,12 +77,12 @@ Synth = Callable[[str, str], Awaitable[bytes]]
 def greeting(hour: int) -> str:
     """What Cuba says when the user starts talking and the day's briefing is already done."""
     if hour < 5 or hour >= 22:
-        return "Geç saatte de buradayım efendim, dinliyorum."
+        return "Geç saatte de buradayım patron, dinliyorum."
     if hour < 12:
-        return "Günaydın efendim, dinliyorum."
+        return "Günaydın patron, dinliyorum."
     if hour < 18:
-        return "Buyurun efendim, dinliyorum."
-    return "İyi akşamlar efendim, dinliyorum."
+        return "Buyur patron, dinliyorum."
+    return "İyi akşamlar patron, dinliyorum."
 
 
 class _Clients:
@@ -105,11 +115,15 @@ def create_app(
     supervisor: Supervisor | None = None,
     live: LiveHub | None = None,
     terminals: TerminalPool | None = None,
+    synth_as=None,
     ask=None,
     telegram=None,
     remote_hosts: tuple[str, ...] = (),
     memory_dir: Path = MEMORY_DIR,
     claude_meter: ClaudeMeter | None = None,
+    roster: Roster | None = None,
+    rewrite_team: Callable[[], None] = lambda: None,
+    chat=None,
 ) -> FastAPI:
     clients = _Clients()
     if terminals is None and terminal is not None:
@@ -120,14 +134,71 @@ def create_app(
     talk = ConversationLog(data_dir / "konusmalar")
     diary = Diary(memory_dir, talk, ask)
     meter = claude_meter or ClaudeMeter()
+    roster = roster or Roster(data_dir / "ekip.json")
+    settings_path = data_dir / "settings.json"
     terminal_sockets: set[WebSocket] = set()
     asking: list[str] = terminals.asking if terminals is not None else []  # terminals waiting for a yes
 
     def team_view() -> dict:
         return {**team.snapshot(), "places": places}
 
+    def member_names() -> dict[str, str]:
+        return {m.id: m.name for m in roster.members}
+
     def crew_for(folder: str) -> TerminalCrew:
-        return crews.setdefault(folder_key(folder or projects.current), TerminalCrew())
+        return crews.setdefault(folder_key(folder or projects.current), TerminalCrew(names=member_names))
+
+    def roster_view() -> dict:
+        return {"type": "roster", "members": [
+            {"id": m.id, "name": m.name, "duty": m.duty, "model": m.model, "hired": m.hired} for m in roster.members
+        ]}
+
+    def settings() -> dict:
+        try:
+            data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError):
+            data = {}
+        return {"live_voice": data.get("live_voice") if data.get("live_voice") in LIVE_VOICES else DEFAULT_LIVE_VOICE}
+
+    def chat_turns() -> list[dict]:
+        """Today's talk with Cuba, by voice, in writing and on Telegram, as conversation turns."""
+        turns: list[dict] = []
+        for line in talk.day(datetime.date.today().isoformat())[-120:]:
+            if line["who"] == "Cuba" and turns and not turns[-1]["reply"]:
+                turns[-1]["reply"] = line["text"]
+            elif line["who"] == "Cuba":
+                turns.append({"you": "", "reply": line["text"]})
+            else:
+                turns.append({"you": line["text"], "reply": "", "channel": line.get("channel", "")})
+        return turns
+
+    async def hire(name: str, duty: str, model: str = "sonnet") -> dict:
+        try:
+            member = roster.hire(name, duty, model)
+        except ValueError as error:
+            return {"error": str(error)}
+        await staff_changed()
+        return {"ok": True, "id": member.id,
+                "not": f"{member.name} işe alındı; ofiste masası hazır. Yeni açılan terminallerde ekipte."}
+
+    async def fire(name: str) -> dict:
+        try:
+            member = roster.fire(name)
+        except ValueError as error:
+            return {"error": str(error)}
+        await staff_changed()
+        return {"ok": True, "not": f"{member.name} ekipten ayrıldı."}
+
+    async def staff_changed() -> None:
+        """The team changed: the subagents are rewritten and idle terminals start afresh to see it."""
+        rewrite_team()
+        if terminals is not None:
+            for folder in terminals.alive():
+                if not crew_for(folder).busy:
+                    terminals.get(folder).close()
+        await clients.send(roster_view())
+        await clients.send(crew_view())
+        await clients.send(terminals_view())
 
     def crew_view(folder: str = "") -> dict:
         folder = folder or projects.current
@@ -216,6 +287,7 @@ def create_app(
             await asyncio.sleep(DIARY_EVERY_S)
 
     app = FastAPI(lifespan=lifespan)
+    app.state.hire, app.state.fire, app.state.settings = hire, fire, settings
     # Rejects DNS-rebinding requests, whose Host is the attacker's domain.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*allowed_hosts, *remote_hosts])
     # The phone reaches the page through Tailscale's https proxy, under the machine's tailnet name.
@@ -251,6 +323,21 @@ def create_app(
     app.mount("/static", StaticFiles(directory=web_dir, check_dir=False), name="static")
 
     # ── Memory: Çağan's notebook, the memory files and the diary ──
+
+    @app.get("/api/settings")
+    async def settings_read() -> JSONResponse:
+        return JSONResponse({**settings(), "voices": LIVE_VOICES})
+
+    @app.put("/api/settings")
+    async def settings_write(request: Request) -> JSONResponse:
+        if not same_site(request) or request.headers.get("content-type") != "application/json":
+            return JSONResponse({"error": "Yetkisiz istek."}, status_code=403)
+        voice = str((await request.json()).get("live_voice", ""))
+        if voice not in LIVE_VOICES:
+            return JSONResponse({"error": "Bilinmeyen ses."}, status_code=400)
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps({**settings(), "live_voice": voice}), encoding="utf-8")
+        return JSONResponse({"ok": True, "live_voice": voice})
 
     @app.get("/api/memory")
     async def memory_read() -> JSONResponse:
@@ -295,9 +382,16 @@ def create_app(
 
     @app.post("/api/tts")
     async def tts(request: Request) -> Response:
-        text = (await request.json()).get("text", "")
+        body = await request.json()
+        text = body.get("text", "")
         try:
-            wav = await synth(text, config.voice)
+            if body.get("who"):
+                # A team member speaking in a meeting, in their own voice.
+                member = roster.voice(str(body["who"]))
+                wav = await (synth_as(text, member.voice, member.rate, member.pitch) if synth_as
+                             else synth(text, member.voice))
+            else:
+                wav = await synth(text, config.voice)
         except Exception:
             logger.exception("speech synthesis failed")
             return JSONResponse({"error": "tts"}, status_code=502)
@@ -471,20 +565,22 @@ def create_app(
     async def meet(folder: str, crew: TerminalCrew, reports: list[dict]) -> None:
         """The subagents who did the work talk it over, line by line, in the office and the feed."""
         members = []
+        duties = {m.id: m.duty for m in roster.members}
         for report in reports:
             if report["who"] not in [m["id"] for m in members]:
-                members.append({"id": report["who"], "name": report["name"], "duty": DUTIES.get(report["who"], "")})
+                members.append({"id": report["who"], "name": report["name"], "duty": duties.get(report["who"], "")})
         lead = {"id": LEAD_DESK, "name": "Cuba", "duty": "takım lideri"}
         result = await hold_meeting(ask, members, [f"{r['name']}:\n{r['text']}" for r in reports], lead)
         if result is None:
             return
         crew.review = {"members": [m["id"] for m in members], "speaker": "", "lines": []}
         names = {**{m["id"]: m["name"] for m in members}, LEAD_DESK: "Cuba"}
+        crew.review["names"] = names
         for line in result["lines"]:
             crew.review["speaker"] = line["who"]
-            await clients.send(crew_view(folder))
-            await asyncio.sleep(MEETING_PACE_S)
             crew.review["lines"].append(line)
+            await clients.send(crew_view(folder))
+            await asyncio.sleep(max(MEETING_PACE_S, len(line["text"]) / SPOKEN_CHARS_PER_S) if MEETING_PACE_S else 0)
         crew.review = None
         crew.tasks = [{"id": i + 1, "to": t["to"], "status": "proposed", "text": t["text"]}
                       for i, t in enumerate(result["tasks"])]
@@ -494,12 +590,36 @@ def create_app(
         summary = "; ".join(result["decisions"]) or "Toplantı yapıldı."
         boss.note_meeting(summary, "\n".join(f"{names.get(l['who'], l['who'])}: {l['text']}" for l in result["lines"]), folder)
         await clients.send({"type": "outputs", "items": boss.outputs})
-        work = "\n".join(f"- {ROLE_NAMES.get(t['to'], 'Cuba')}: {t['text']}" for t in result["tasks"])
+        work = "\n".join(f"- {names.get(t['to'], member_names().get(t['to'], 'Cuba'))}: {t['text']}" for t in result["tasks"])
         if live is not None and live.active:
             await live.tell(f"[TOPLANTI SONUCU — {project_name(folder)}] Kararlar: {summary}"
                             + (f"\nÖnerilen işler:\n{work}\nÇağan onaylarsa terminale_ver ile ekibe ver." if work else ""))
         elif telegram is not None:
             await telegram.send(f"🗣 {project_name(folder)} toplantısı: {summary}" + (f"\nÖnerilen işler:\n{work}" if work else ""))
+
+    async def write_to_cuba(text: str, ws: WebSocket) -> None:
+        """A written message to Cuba: answered in writing, with the same tools and memory as the voice."""
+        if not text.strip():
+            return
+        await clients.send({"type": "user_text", "text": text}, ws)
+        talk.add("Çağan", text, "yazı")
+
+        async def tool_seen(name: str, args: dict) -> None:
+            summary = f"{args.get('proje', '')}: {args.get('talimat', '')}" if name == "terminale_ver" else str(args.get("ad", ""))
+            await clients.send({"type": "tool", "name": name, "summary": summary[:80]}, ws)
+
+        try:
+            reply = await chat.reply([{"text": text}], tool_seen) or "Tamam patron."
+        except Exception:  # noqa: BLE001 - the page hears why, the server log has the rest
+            logger.exception("written message to cuba failed")
+            await clients.send({"type": "turn_end", "error": True, "message": "Gemini'ye ulaşılamadı."}, ws)
+            return
+        talk.add("Cuba", reply, "yazı")
+        await clients.send({"type": "text", "text": reply}, ws)
+        splitter = SentenceSplitter()
+        for sentence in [*splitter.feed(reply), *splitter.flush()]:
+            await clients.send({"type": "sentence", "text": sentence}, ws)
+        await clients.send({"type": "turn_end", "error": False}, ws)
 
     async def say_aloud(text: str, ws: WebSocket | None = None) -> None:
         if not text:
@@ -528,7 +648,8 @@ def create_app(
                 await open_view.close(code=1012)
         await clients.send(projects.listing(), ws)
         await clients.send(crew_view(path), ws)
-        await clients.send({"type": "chat", "turns": team.chat}, ws)
+        if chat is None:  # one conversation with Cuba runs across projects
+            await clients.send({"type": "chat", "turns": team.chat}, ws)
 
     @app.websocket("/ws/live")
     async def live_socket(ws: WebSocket) -> None:
@@ -605,12 +726,16 @@ def create_app(
             await clients.send({"type": "notice", "text": f"Telegram eşleme kodu: bota '/esle {telegram.pair_code}' yazın."}, ws)
         await clients.send(boss.state(), ws)
         await clients.send({"type": "outputs", "items": boss.outputs}, ws)
-        await clients.send({"type": "chat", "turns": team.chat}, ws)
+        await clients.send(roster_view(), ws)
+        # With Cuba on Gemini, one conversation runs across voice, page and Telegram.
+        await clients.send({"type": "chat", "turns": chat_turns() if chat is not None else team.chat}, ws)
         try:
             while True:
                 message = await ws.receive_json()
                 kind = message.get("type")
-                if kind == "say":
+                if kind == "say" and chat is not None:
+                    asyncio.create_task(write_to_cuba(str(message.get("text", "")), ws))
+                elif kind == "say":
                     text = message.get("text", "")
                     await clients.send({"type": "user_text", "text": text}, ws)
                     try:
@@ -785,11 +910,20 @@ def main(argv: list[str] | None = None) -> None:
     async def speak(text: str, voice: str) -> bytes:
         return await synthesize(text, voice, config.voice_rate, config.voice_pitch)
 
+    async def speak_as(text: str, voice: str, rate: str, pitch: str) -> bytes:
+        return await synthesize(text, voice, rate, pitch)
+
     from server.terminal import hook_settings, powershell_command
 
     from server.prompts import write_terminal_team
 
-    charter, plugin = write_terminal_team(data_dir / "terminal", config.models)
+    roster = Roster(data_dir / "ekip.json")
+
+    def rewrite_team() -> tuple[Path, Path]:
+        """The charter and subagents, hires included; Claude reads them as each terminal opens."""
+        return write_terminal_team(data_dir / "terminal", config.models, roster.hires)
+
+    charter, plugin = rewrite_team()
     from server.prompts import INSTALLERS, ofis_command
 
     settings = hook_settings(sys.executable, data_dir / "terminal", charter, allow=(ofis_command(), *INSTALLERS))
@@ -826,15 +960,38 @@ def main(argv: list[str] | None = None) -> None:
     def last_page() -> str:
         return diary.latest(datetime.date.today().isoformat())
 
+    # The app is made last but Cuba's tools need its hiring; they reach it through here.
+    late: dict = {}
+
+    async def hire(name: str, duty: str, model: str = "sonnet") -> dict:
+        return await late["app"].state.hire(name, duty, model)
+
+    async def fire(name: str) -> dict:
+        return await late["app"].state.fire(name)
+
+    def cuba_tools():
+        from server.live import CubaTools
+
+        return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire)
+
+    def live_voice() -> str:
+        return late["app"].state.settings()["live_voice"] if "app" in late else config.live_voice
+
     live = None
+    chat = None
+    if gemini_key:
+        from server.chat import CubaChat
+
+        chat = CubaChat(gemini_key, config.gemini_model, cuba_tools(), last_page,
+                        "\n# Şu an yazıyla konuşuyorsunuz\nÇağan komuta merkezinden yazıyor; cevabın ekranda okunacak. "
+                        "Kısa yaz, başlık ya da tablo kullanma.\n")
     if config.voice_engine == "live" and gemini_key:
         live = LiveHub(
-            gemini_key, config.live_model, config.live_voice, hand_over, press, projects=projects.listing,
-            heard=lambda who, text: talk.add(who, text), diary=last_page,
+            gemini_key, config.live_model, live_voice, hand_over, press, projects=projects.listing,
+            heard=lambda who, text: talk.add(who, text), diary=last_page, tools=cuba_tools(),
         )
     telegram = None
     if gemini_key and (data_dir / "telegram.json").exists():
-        from server.live import CubaTools
         from server.telegram import TelegramBot
 
         def status() -> str:
@@ -846,11 +1003,11 @@ def main(argv: list[str] | None = None) -> None:
 
         async def toggle_away() -> str:
             supervisor.set_away(not supervisor.away)
-            return "Uzak mod açık: kararları ben veriyorum efendim." if supervisor.away else "Uzak mod kapandı efendim."
+            return "Uzak mod açık: kararları ben veriyorum patron." if supervisor.away else "Uzak mod kapandı patron."
 
         telegram = TelegramBot(
             data_dir / "telegram.json", gemini_key, config.gemini_model,
-            CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing),
+            cuba_tools(),
             status, toggle_away, lambda: press("\x1b"),
             heard=lambda who, text, channel: talk.add(who, text, channel), diary=last_page,
         )
@@ -860,7 +1017,9 @@ def main(argv: list[str] | None = None) -> None:
     app = create_app(
         config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminals=terminals,
         supervisor=supervisor, live=live, ask=ask if gemini_key else None, telegram=telegram, remote_hosts=remote,
+        roster=roster, rewrite_team=rewrite_team, chat=chat, synth_as=speak_as,
     )
+    late["app"] = app
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))
     if args.open:
         threading.Thread(target=_open_when_ready, args=(server, url), daemon=True).start()

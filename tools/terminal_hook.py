@@ -74,6 +74,13 @@ def main() -> None:
             # Only the short fields the office shows; a file being written can be large.
             input={k: v for k, v in (data.get("tool_input") or {}).items() if isinstance(v, str) and len(v) < 500},
         )
+        raw = data.get("tool_input") or {}
+        edits = raw.get("edits") if isinstance(raw.get("edits"), list) else []
+        written = raw.get("new_string") or raw.get("content") or raw.get("new_source") or (
+            edits[0].get("new_string") if edits and isinstance(edits[0], dict) else "")
+        if kind == "pre" and isinstance(written, str) and written:
+            # The start of the code being written, to float over the writer's desk.
+            body["input"]["new_string"] = written[:1500]
         if kind == "post":
             # A subagent's final report: the team talks it over once the work is done.
             body["result"] = result_text(data.get("tool_response"))[-3000:]
