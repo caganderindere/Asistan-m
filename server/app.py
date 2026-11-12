@@ -41,6 +41,7 @@ from server.supervisor import Supervisor
 from server.terminal import (
     AGENT_TOOLS, LEAD_DESK, PERMISSION_LINE, Terminal, TerminalCrew, TerminalPool, folder_key,
 )
+from server.life import LifeLog
 from server.roster import Roster
 from server.usage import GEMINI, ClaudeMeter
 
@@ -124,6 +125,7 @@ def create_app(
     roster: Roster | None = None,
     rewrite_team: Callable[[], None] = lambda: None,
     chat=None,
+    life: LifeLog | None = None,
 ) -> FastAPI:
     clients = _Clients()
     if terminals is None and terminal is not None:
@@ -132,7 +134,8 @@ def create_app(
     boss = supervisor or Supervisor(None, data_dir / "terminal" / "outputs.json")
     places: dict[str, str] = {}  # who was sent where; the rest follow their own routine
     talk = ConversationLog(data_dir / "konusmalar")
-    diary = Diary(memory_dir, talk, ask)
+    life = life or LifeLog(data_dir)
+    diary = Diary(memory_dir, talk, ask, life)
     meter = claude_meter or ClaudeMeter()
     roster = roster or Roster(data_dir / "ekip.json")
     settings_path = data_dir / "settings.json"
@@ -288,6 +291,12 @@ def create_app(
 
     app = FastAPI(lifespan=lifespan)
     app.state.hire, app.state.fire, app.state.settings = hire, fire, settings
+
+    def notify(message: dict) -> None:
+        """Tell the page, from Cuba's tools, that something changed."""
+        asyncio.get_running_loop().create_task(clients.send(message))
+
+    app.state.notify = notify
     # Rejects DNS-rebinding requests, whose Host is the attacker's domain.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*allowed_hosts, *remote_hosts])
     # The phone reaches the page through Tailscale's https proxy, under the machine's tailnet name.
@@ -323,6 +332,10 @@ def create_app(
     app.mount("/static", StaticFiles(directory=web_dir, check_dir=False), name="static")
 
     # ── Memory: Çağan's notebook, the memory files and the diary ──
+
+    @app.get("/api/life")
+    async def life_read() -> JSONResponse:
+        return JSONResponse({"week": life.entries(), "situation": life.situation()})
 
     @app.get("/api/settings")
     async def settings_read() -> JSONResponse:
@@ -523,8 +536,9 @@ def create_app(
         await clients.send(terminals_view())
         answer: dict = {}
         live_on = live is not None and live.active and not boss.away
-        # Nobody at the screen: the phone hears about it.
-        far = telegram is not None and (boss.away or clients.active is None)
+        # Nobody at the screen: the phone hears about it, unless Çağan is asleep.
+        asleep = (life.situation() or {}).get("situation") == "uykuda"
+        far = telegram is not None and (boss.away or clients.active is None) and not asleep
         if kind == "stop" and live_on:
             # Cuba, on the line, passes the report on in his own words.
             report = str(body.get("text", ""))
@@ -727,6 +741,7 @@ def create_app(
         await clients.send(boss.state(), ws)
         await clients.send({"type": "outputs", "items": boss.outputs}, ws)
         await clients.send(roster_view(), ws)
+        await clients.send({"type": "situation", "situation": life.situation()}, ws)
         # With Cuba on Gemini, one conversation runs across voice, page and Telegram.
         await clients.send({"type": "chat", "turns": chat_turns() if chat is not None else team.chat}, ws)
         try:
@@ -955,7 +970,7 @@ def main(argv: list[str] | None = None) -> None:
         terminals.get(terminals.asking[-1] if terminals.asking else projects.current).write(keys)
 
     talk = ConversationLog(data_dir / "konusmalar")
-    diary = Diary(MEMORY_DIR, talk, ask if gemini_key else None)
+    diary = Diary(MEMORY_DIR, talk, ask if gemini_key else None, LifeLog(data_dir))
 
     def last_page() -> str:
         return diary.latest(datetime.date.today().isoformat())
@@ -969,10 +984,22 @@ def main(argv: list[str] | None = None) -> None:
     async def fire(name: str) -> dict:
         return await late["app"].state.fire(name)
 
+    life = LifeLog(data_dir)
+
+    async def search(question: str) -> dict:
+        from server.life import web_search
+
+        return await web_search(gemini_key, config.gemini_model, question)
+
+    def notify(message: dict) -> None:
+        if "app" in late:
+            late["app"].state.notify(message)
+
     def cuba_tools():
         from server.live import CubaTools
 
-        return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire)
+        return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire,
+                         life=life, search=search if gemini_key else None, notify=notify)
 
     def live_voice() -> str:
         return late["app"].state.settings()["live_voice"] if "app" in late else config.live_voice
@@ -1017,7 +1044,7 @@ def main(argv: list[str] | None = None) -> None:
     app = create_app(
         config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminals=terminals,
         supervisor=supervisor, live=live, ask=ask if gemini_key else None, telegram=telegram, remote_hosts=remote,
-        roster=roster, rewrite_team=rewrite_team, chat=chat, synth_as=speak_as,
+        roster=roster, rewrite_team=rewrite_team, chat=chat, synth_as=speak_as, life=life,
     )
     late["app"] = app
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))

@@ -246,7 +246,7 @@ AUTH = {"X-Ekip-Token": TOKEN}
 def test_connect_sends_projects_team_and_chat(client, tmp_path):
     with client.websocket_connect("/ws") as ws:
         msgs = read_until(ws, "chat")
-    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "terminals", "usage", "away", "outputs", "roster", "chat"]
+    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "terminals", "usage", "away", "outputs", "roster", "situation", "chat"]
     assert msgs[1]["current"] == str(tmp_path)
     assert [a["id"] for a in msgs[2]["agents"]] == ["lider", "kidemli", "gelistirici", "testci", "asistan"]
     assert msgs[2]["agents"][4]["model"] == "claude-haiku-5-5"

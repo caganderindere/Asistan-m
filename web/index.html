@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=10">
+  <link rel="stylesheet" href="/static/style.css?v=11">
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
   <!-- Silero VAD, the speech detector Pipecat and LiveKit use, running in the browser. -->
@@ -29,6 +29,7 @@
     </div>
     <div class="top-actions">
       <dl class="hud">
+        <div id="hudSituationBox" hidden><dt>Durum</dt><dd id="hudSituation"></dd></div>
         <div title="Açık proje"><dt>Proje</dt><dd id="workdir">—</dd></div>
         <div><dt>Ekip</dt><dd id="hudTeam">hazır</dd></div>
         <div title="Bugün harcanan token (giriş + çıkış). Claude: bilgisayardaki tüm Claude Code oturumları."><dt>Token · bugün</dt><dd id="hudTokens">—</dd></div>
@@ -142,6 +143,8 @@
       </div>
       <textarea id="memoryText" spellcheck="false" aria-label="Defterin içeriği"></textarea>
       <p class="hint" id="memoryState">Cuba öğrendiklerini buraya yazar; yanlışı düzeltebilir, eksiği ekleyebilirsin.</p>
+      <div class="memory-head"><h4>Bu hafta</h4></div>
+      <ol class="life" id="lifeWeek"></ol>
       <div class="memory-head">
         <h4>Günlük</h4>
         <button type="button" id="diaryToday" class="ghost">Bugünü şimdi yaz</button>
@@ -165,6 +168,6 @@
     </article>
   </template>
 
-  <script type="module" src="/static/app.js?v=10"></script>
+  <script type="module" src="/static/app.js?v=11"></script>
 </body>
 </html>

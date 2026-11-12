@@ -25,7 +25,7 @@ DIARY_KEEP = 60
 TALK_CHARS = 30000
 
 DIARY_PROMPT = """Sen Cuba'sın, Çağan'ın kişisel asistanı. Aşağıda {day} günü Çağan'la konuşmaların ve ekibin
-o gün verdiği raporlar var. İki şey yaz:
+o gün verdiği raporlar ve günlük hayat kayıtları (spor, yol, yemek, uyku…) var. İki şey yaz:
 1. "gunluk": o günün kısa günlüğü, Türkçe, en çok on madde: Çağan ne istedi, ne yapıldı, ne yarım kaldı,
    neye dikkat etmek gerekiyor. Yalnızca metinde olanı yaz.
 2. "ogrenilenler": Çağan hakkında kalıcı, yeni öğrenilen bilgiler (tercih, alışkanlık, önemli proje, kişi,
@@ -124,11 +124,12 @@ class ConversationLog:
 class Diary:
     """One page per day in asistan/gunluk, written by Gemini from the day's talk and reports."""
 
-    def __init__(self, memory_dir: Path, log: ConversationLog, ask: Ask | None) -> None:
+    def __init__(self, memory_dir: Path, log: ConversationLog, ask: Ask | None, life=None) -> None:
         self.folder = memory_dir / "gunluk"
         self.profile = memory_dir / "cagan.md"
         self._log = log
         self._ask = ask
+        self._life = life  # server/life.py: sport, driving, meals… of the day
 
     def pages(self, limit: int = 14) -> list[dict]:
         found = sorted(self.folder.glob("*.md"), reverse=True)[:limit]
@@ -150,13 +151,14 @@ class Diary:
         talk = "\n".join(f"{l['time']} {l['who']}: {l['text']}" for l in self._log.day(day))
         work = "\n".join(f"{o['time']} {o.get('project', '')}: {o['summary']}" for o in reports
                          if str(o.get("time", "")).startswith(day))
-        if not talk and not work:
+        lived = "\n".join(f"{e['time'][11:]} {e['kind']}: {e['detail']}" for e in (self._life.day(day) if self._life else []))
+        if not talk and not work and not lived:
             return None
         ensure_profile(self.profile)
         system = DIARY_PROMPT.format(day=day, sections=", ".join(SECTIONS),
                                      profile=self.profile.read_text(encoding="utf-8"))
         try:
-            data = json.loads(await self._ask(system, f"# Konuşmalar\n{talk[-TALK_CHARS:]}\n\n# Ekip raporları\n{work}", True))
+            data = json.loads(await self._ask(system, f"# Konuşmalar\n{talk[-TALK_CHARS:]}\n\n# Günlük hayat\n{lived}\n\n# Ekip raporları\n{work}", True))
         except Exception:  # noqa: BLE001
             logger.exception("diary for %s failed", day)
             return None

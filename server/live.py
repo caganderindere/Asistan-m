@@ -20,6 +20,7 @@ import websockets
 from fastapi import WebSocket, WebSocketDisconnect
 
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
+from server.life import KINDS, SITUATIONS, LifeLog, weather
 from server.config import ROOT
 from server.usage import GEMINI
 
@@ -43,6 +44,42 @@ LIVE_TOOLS = [{"functionDeclarations": [
             },
             "required": ["proje", "talimat"],
         },
+    },
+    {
+        "name": "hayat_kaydet",
+        "description": "Çağan'ın günlük hayatından bir şeyi kaydeder: spor, araba yolculuğu, yemek, uyku, sağlık, iş, sosyal, alışveriş.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tur": {"type": "string", "enum": list(KINDS)},
+                "detay": {"type": "string", "description": "Ne yaptı, kısaca: \"45 dk koşu, 6 km\", \"İzmir'e yola çıktı\"."},
+                "sure_dk": {"type": "integer", "description": "Süresi dakika olarak, biliniyorsa."},
+                "deger": {"type": "string", "description": "Ölçü varsa: kilo, mesafe, kalori, uyku saati, yakıt…"},
+            },
+            "required": ["tur", "detay"],
+        },
+    },
+    {
+        "name": "durum",
+        "description": "Çağan'ın şu an ne yaptığını ayarlar; sen de ona göre konuşursun. Bitince \"yok\" ver.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "durum": {"type": "string", "enum": [*SITUATIONS, "yok"]},
+                "sure_dk": {"type": "integer", "description": "Ne kadar sürecek, biliniyorsa."},
+            },
+            "required": ["durum"],
+        },
+    },
+    {
+        "name": "hava",
+        "description": "Bir yerin şu anki hava durumu, sonraki saatler, bugün ve yarın.",
+        "parameters": {"type": "object", "properties": {"yer": {"type": "string"}}, "required": ["yer"]},
+    },
+    {
+        "name": "ara",
+        "description": "Güncel bir bilgiyi Google'da arar: haber, maç sonucu, trafik, fiyat, açılış saati, bir yer, bir olay.",
+        "parameters": {"type": "object", "properties": {"soru": {"type": "string"}}, "required": ["soru"]},
     },
     {
         "name": "ise_al",
@@ -128,11 +165,17 @@ class CubaTools:
         projects: Callable[[], dict] = dict,
         hire: Callable[..., Awaitable[dict]] | None = None,
         fire: Callable[[str], Awaitable[dict]] | None = None,
+        life: LifeLog | None = None,
+        search: Callable[[str], Awaitable[dict]] | None = None,
+        notify: Callable[[dict], None] = lambda message: None,
     ) -> None:
         self._hand_over = hand_over
         self._press = press
         self._hire = hire
         self._fire = fire
+        self.life = life
+        self._search = search
+        self._notify = notify  # tells the page what changed: Çağan's situation, a new log entry
         self.memory_dir = memory_dir
         self._runner = runner
         self.projects = projects  # the project listing, as the browser gets it
@@ -153,6 +196,19 @@ class CubaTools:
                     return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
                 await self._hand_over(str(args["talimat"]).strip(), folder)
                 return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+            if name == "hayat_kaydet" and self.life is not None and str(args.get("detay", "")).strip():
+                entry = self.life.add(str(args.get("tur", "")), str(args["detay"]), args.get("sure_dk"),
+                                      str(args.get("deger") or ""))
+                self._notify({"type": "life", "entry": entry})
+                return {"ok": True, "kayit": entry, "son_yedi_gun": self.life.week()}
+            if name == "durum" and self.life is not None:
+                state = self.life.set_situation(str(args.get("durum", "")), args.get("sure_dk"))
+                self._notify({"type": "situation", "situation": state})
+                return {"ok": True, "durum": state or "yok"}
+            if name == "hava" and str(args.get("yer", "")).strip():
+                return await weather(str(args["yer"]))
+            if name == "ara" and self._search is not None and str(args.get("soru", "")).strip():
+                return await self._search(str(args["soru"]))
             if name == "ise_al" and self._hire is not None:
                 return await self._hire(str(args.get("ad", "")), str(args.get("gorev", "")), str(args.get("model") or "sonnet"))
             if name == "isten_cikar" and self._fire is not None:
@@ -166,7 +222,8 @@ class CubaTools:
         return {"error": f"Bilinmeyen araç ya da eksik bilgi: {name}"}
 
     def prompt(self, diary: str = "") -> str:
-        return live_prompt(self.memory_dir, projects=self.projects(), diary=diary)
+        text = live_prompt(self.memory_dir, projects=self.projects(), diary=diary)
+        return f"{text}\n\n{self.life.prompt()}" if self.life is not None else text
 
 
 class LiveHub:

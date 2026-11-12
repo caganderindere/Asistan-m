@@ -138,6 +138,13 @@ function handle(msg) {
     case 'roster':
       members = msg.members;
       break;
+    case 'situation':
+      showSituation(msg.situation);
+      break;
+    case 'life':
+      addFeed('cagan', 'Çağan', `${LIFE_ICONS[msg.entry.kind] ?? '•'} ${msg.entry.detail}`, 'life');
+      if (pane === 'memory') showLife();
+      break;
     case 'terminals':
       busyProjects = new Set(msg.busy);
       openProjects = new Set(msg.open);
@@ -408,6 +415,35 @@ function feedRow({ who, name, text, kind, time }) {
     Object.assign(document.createElement('time'), { textContent: time.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }));
   li.append(head, Object.assign(document.createElement('p'), { textContent: text }));
   return li;
+}
+
+// ── Çağan's day: what he is doing now, and this week ───────
+
+const LIFE_ICONS = { spor: '🏋️', 'araç': '🚗', yemek: '🍽️', uyku: '😴', 'sağlık': '🩺', 'iş': '💼', sosyal: '👥', 'alışveriş': '🛒', 'diğer': '•' };
+const SITUATION_LABELS = {
+  'araçta': '🚗 Araçta', sporda: '🏋️ Sporda', 'işte': '💼 İşte', uykuda: '😴 Uykuda',
+  'dışarıda': '🚶 Dışarıda', evde: '🏠 Evde', 'toplantıda': '🗣 Toplantıda',
+};
+
+function showSituation(situation) {
+  $('hudSituationBox').hidden = !situation;
+  if (!situation) return;
+  $('hudSituation').textContent = SITUATION_LABELS[situation.situation] ?? situation.situation;
+  $('hudSituationBox').title = `${situation.since}'den beri; ${situation.until.slice(11, 16)}'e kadar`;
+}
+
+async function showLife() {
+  let data;
+  try { data = await (await fetch('/api/life')).json(); } catch { return; }
+  $('lifeWeek').replaceChildren(...(data.week.length ? data.week.toReversed().map((e) => {
+    const li = document.createElement('li');
+    li.append(Object.assign(document.createElement('span'), { className: 'life-icon', textContent: LIFE_ICONS[e.kind] ?? '•' }),
+      Object.assign(document.createElement('span'), { textContent: e.detail + (e.minutes ? ` · ${e.minutes} dk` : '') + (e.value ? ` · ${e.value}` : '') }),
+      Object.assign(document.createElement('time'), { textContent: e.time.slice(5).replace('-', '.') }));
+    return li;
+  }) : [Object.assign(document.createElement('li'), {
+    className: 'empty', textContent: 'Cuba\'ya sporundan, yolundan, yemeğinden bahsettikçe burada birikir.',
+  })]));
 }
 
 // ── Header: the open project, the team, the time ────────────
@@ -1203,6 +1239,7 @@ $('voicePick').addEventListener('change', async () => {
 
 async function showMemory() {
   showVoices();
+  showLife();
   let data;
   try {
     data = await (await fetch('/api/memory')).json();
