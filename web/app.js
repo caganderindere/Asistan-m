@@ -192,7 +192,8 @@ function handle(msg) {
       addOp(currentTurn ??= addTurn(''), msg);
       break;
     case 'sentence':
-      if (handsFree && !hushed) enqueueSpeech(msg.text);
+      // On the live line Cuba speaks with its own voice; reading the text too would answer twice.
+      if (handsFree && !hushed && !live.active) enqueueSpeech(msg.text);
       break;
     case 'turn_end':
       turnOpen = false;
@@ -857,6 +858,7 @@ async function transcribe(blob, quiet = false) {
 const normalize = (t) => t.toLocaleLowerCase('tr').replace(/[^\p{L}\s]/gu, '').trim();
 
 async function listen() {
+  if (live.active) return;
   if (!handsFree || turnOpen || speaking || recording) return;
   setState('listening');
   let result;
@@ -903,7 +905,8 @@ async function listenForStop() {
 }
 
 function continueIfIdle() {
-  if (!handsFree || speaking) return;
+  // The live line listens by itself; the old recorder alongside it would hear everything twice.
+  if (!handsFree || speaking || live.active) return;
   if (turnOpen) { if (state !== 'working') setState('working'); return; }
   listen();
 }
