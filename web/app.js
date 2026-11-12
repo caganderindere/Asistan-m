@@ -685,7 +685,7 @@ function cancelRecording() {
 }
 
 /** Record one utterance; resolves with its transcript, or null if cancelled. */
-async function recordUtterance({ bargeIn = false, minRms, onSpeech } = {}) {
+async function recordUtterance({ bargeIn = false, minRms, onSpeech, quiet = false } = {}) {
   if (!vadBroken) {
     try {
       await ensureDetector();
@@ -695,7 +695,7 @@ async function recordUtterance({ bargeIn = false, minRms, onSpeech } = {}) {
       vadBroken = true;
     }
   }
-  if (vadBroken) return recordByLoudness({ bargeIn, minRms, onSpeech });
+  if (vadBroken) return recordByLoudness({ bargeIn, minRms, onSpeech, quiet });
   return new Promise((resolve) => {
     const current = {
       bargeIn,
@@ -704,7 +704,7 @@ async function recordUtterance({ bargeIn = false, minRms, onSpeech } = {}) {
       async finish(blob) {
         if (recording !== current) return;
         recording = null;
-        resolve(await transcribe(blob));
+        resolve(await transcribe(blob, quiet));
       },
       cancel() { resolve(null); },
     };
@@ -713,7 +713,7 @@ async function recordUtterance({ bargeIn = false, minRms, onSpeech } = {}) {
 }
 
 /** The fallback: record until the loudness detector hears speech end. */
-async function recordByLoudness({ bargeIn, minRms, onSpeech }) {
+async function recordByLoudness({ bargeIn, minRms, onSpeech, quiet = false }) {
   const stream = await ensureMic();
   return new Promise((resolve) => {
     const recorder = new MediaRecorder(stream);
@@ -734,7 +734,7 @@ async function recordByLoudness({ bargeIn, minRms, onSpeech }) {
     recorder.onstop = async () => {
       if (discard) { resolve(null); return; }
       if (recording === current) recording = null;
-      resolve(await transcribe(new Blob(chunks, { type: recorder.mimeType })));
+      resolve(await transcribe(new Blob(chunks, { type: recorder.mimeType }), quiet));
     };
     recorder.start();
     stopMonitor = monitorSilence(stream, () => {
@@ -743,7 +743,15 @@ async function recordByLoudness({ bargeIn, minRms, onSpeech }) {
   });
 }
 
-async function transcribe(blob) {
+async function transcribe(blob, quiet = false) {
+  if (quiet) {
+    try {
+      const r = await fetch('/api/transcribe', { method: 'POST', body: blob });
+      return r.ok ? await r.json() : { text: '', meaningful: false };
+    } catch {
+      return { text: '', meaningful: false };
+    }
+  }
   if (state === 'listening') setState('transcribing');
   try {
     const r = await fetch('/api/transcribe', { method: 'POST', body: blob });
@@ -869,8 +877,6 @@ const live = createLive({
 });
 
 async function startLive() {
-  waker?.abort();
-  waker = null;
   handsFree = true;
   setState('working', 'Cuba bağlanıyor…');
   try {
@@ -883,8 +889,7 @@ async function startLive() {
 }
 
 function startHandsFree() {
-  waker?.abort();
-  waker = null;
+  if (waking) cancelRecording(); // stop waiting for the name: the talk starts now
   lastHeard = Date.now();
   if (ws?.readyState !== WebSocket.OPEN) { showNotice('Sunucuya bağlı değil.'); return; }
   if (liveAvailable) { startLive(); return; }
@@ -922,44 +927,74 @@ function stopEveryone() {
 }
 
 // ── Wake word: say "Cuba" and it listens ───────────────────
-// The browser's own speech recognition (Chrome/Edge) waits for the name; then the usual
-// conversation starts. After a minute and a half of silence it goes back to waiting.
+// While waiting, each thing said is written down by the computer's own Whisper (nothing leaves
+// the house) and searched for the name; Whisper knows "Cuba" from the vocabulary. This works in
+// an iPhone home-screen app too, where the browser's speech recognition does not.
 
-const WAKE = /\b(cuba|küba|kuba|kubaa|cubaa)\b/i;
 const SLEEP_AFTER_MS = 90_000;
-const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let wakeOn = false;
-let waker = null;
+let waking = false; // the loop waiting for the name is running
 let lastHeard = Date.now();
 
-function setWake(on) {
-  wakeOn = on && Boolean(Recognition);
-  try { localStorage.setItem('cuba.wake', wakeOn ? '1' : '0'); } catch { /* private window */ }
-  $('wakeToggle').setAttribute('aria-pressed', String(wakeOn));
-  if (wakeOn) waitForName(); else { waker?.abort(); waker = null; }
+/** Whether *text* says the name: "Cuba", and how it tends to be heard ("Kuba", "Küba", "Cuba'ya"). */
+function saysName(text) {
+  return normalize(text).split(/\s+/).some((word) => {
+    const w = word.replace(/[kq]/g, 'c').replace(/ü/g, 'u');
+    if (w.startsWith('cuba')) return true;
+    if (w[0] !== 'c' || Math.abs(w.length - 4) > 1) return false; // "Tuba" is someone else
+    // One letter off is still the name.
+    const row = [0, 1, 2, 3, 4];
+    for (let i = 1; i <= w.length; i += 1) {
+      let prev = row[0];
+      row[0] = i;
+      for (let j = 1; j <= 4; j += 1) {
+        const here = row[j];
+        row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (w[i - 1] === 'cuba'[j - 1] ? 0 : 1));
+        prev = here;
+      }
+    }
+    return row[4] <= 1;
+  });
 }
 
-function waitForName() {
-  if (!wakeOn || waker || handsFree || replaced) return;
-  waker = new Recognition();
-  waker.lang = 'tr-TR';
-  waker.continuous = true;
-  waker.interimResults = true;
-  waker.onresult = (event) => {
-    const said = [...event.results].slice(event.resultIndex).map((r) => r[0].transcript).join(' ');
-    if (!WAKE.test(said)) return;
-    waker.onend = null;
-    waker.abort();
-    waker = null;
-    lastHeard = Date.now();
-    startHandsFree();
-  };
-  // Chrome ends recognition now and then on its own; it is started again while waiting.
-  waker.onend = () => { waker = null; setTimeout(waitForName, 400); };
-  waker.onerror = (e) => {
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { setWake(false); showNotice(MIC_DENIED); }
-  };
-  try { waker.start(); } catch { waker = null; }
+function wakeLabel(text) { $('wakeToggle').querySelector('span').textContent = text; }
+
+function setWake(on) {
+  wakeOn = on && Boolean(navigator.mediaDevices?.getUserMedia);
+  try { localStorage.setItem('cuba.wake', wakeOn ? '1' : '0'); } catch { /* private window */ }
+  $('wakeToggle').setAttribute('aria-pressed', String(wakeOn));
+  if (wakeOn) waitForName();
+  else {
+    if (waking) cancelRecording();
+    if (!handsFree) releaseMic();
+    wakeLabel('“Cuba” de');
+  }
+}
+
+async function waitForName() {
+  if (!wakeOn || waking || handsFree || replaced || ws?.readyState !== WebSocket.OPEN) return;
+  waking = true;
+  wakeLabel('Bekliyor…');
+  try {
+    await ensureMic();
+    while (wakeOn && !handsFree && !replaced) {
+      const result = await recordUtterance({ quiet: true });
+      if (!result || !wakeOn || handsFree) break;
+      if (!result.text.trim()) continue;
+      wakeLabel(`Duydum: “${result.text.trim().slice(0, 22)}”`);
+      if (saysName(result.text)) {
+        lastHeard = Date.now();
+        waking = false;
+        startHandsFree();
+        return;
+      }
+    }
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') { setWake(false); showNotice(MIC_DENIED); }
+  } finally {
+    waking = false;
+    if (wakeOn && !handsFree) wakeLabel('Bekliyor…');
+  }
 }
 
 // A talk nobody has spoken in for a while goes back to sleep, so the line is not kept open for nothing.
@@ -969,12 +1004,9 @@ setInterval(() => {
     showNotice('Uyku moduna geçtim. "Cuba" demen yeterli.', 4000);
   }
   if (wakeOn && !handsFree) waitForName();
-}, 5000);
+  else if (wakeOn && handsFree) wakeLabel('Konuşuyoruz');
+}, 3000);
 
-if (!Recognition) {
-  $('wakeToggle').disabled = true;
-  $('wakeToggle').title = 'Bu tarayıcı konuşma tanımayı desteklemiyor (Chrome ya da Edge gerekir).';
-}
 $('wakeToggle').addEventListener('click', () => setWake(!wakeOn));
 try { if (localStorage.getItem('cuba.wake') === '1') setWake(true); } catch { /* private window */ }
 
