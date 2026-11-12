@@ -47,6 +47,8 @@ let currentTurn = null;
 let ttsWarned = false;
 let cpuNoticeShown = false;
 let team = null; // the latest team snapshot
+let termTeam = null; // the latest snapshot of the terminal's Claude and its subagents
+let projectList = []; // every project, before the search box filters it
 let project = '';
 let selectedAgent = null;
 let liveMeeting = null; // the block showing a team meeting while it is going on
@@ -118,6 +120,9 @@ function handle(msg) {
       showTeam(msg);
       break;
     case 'terminal_team':
+      termTeam = msg;
+      noteActivity('terminal', msg);
+      showHud();
       termOffice.update(msg);
       $('termQuestion').hidden = !msg.question;
       $('termQuestion').textContent = msg.question;
@@ -231,9 +236,20 @@ function showProjects({ current, projects }) {
     if (handsFree) continueIfIdle(); else setState('idle');
   }
   project = current;
-  $('workdir').textContent = current;
+  projectList = projects;
+  const open = projects.find((p) => p.path === current);
+  $('workdir').textContent = open?.name ?? current;
+  $('workdir').title = current;
+  $('projectCount').textContent = projects.length ? `· ${projects.length}` : '';
   if (pane === 'project') showProject();
-  $('projectList').replaceChildren(...projects.map(({ path, name }) => {
+  renderProjects();
+}
+
+function renderProjects() {
+  const wanted = $('projectFilter').value.trim().toLocaleLowerCase('tr');
+  const shown = projectList.filter(({ path, name }) => !wanted || `${name} ${path}`.toLocaleLowerCase('tr').includes(wanted));
+  const current = project;
+  $('projectList').replaceChildren(...shown.map(({ path, name }) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'project';
@@ -247,6 +263,8 @@ function showProjects({ current, projects }) {
     return li;
   }));
 }
+
+$('projectFilter').addEventListener('input', renderProjects);
 
 function chooseProject(path) {
   if (path === project) return;
@@ -314,8 +332,74 @@ function showLiveMeeting() {
   scrollHistory();
 }
 
+// ── Activity feed: who is doing and saying what ─────────────
+
+const FEED_LIMIT = 300;
+const feedItems = [];
+const lastSeen = new Map(); // "source:agent" → the activity last put in the feed
+const heardLines = new Map(); // source → meeting lines already in the feed
+
+/** Put what is new in a team snapshot into the feed: started work, tool steps, meeting words. */
+function noteActivity(source, snapshot) {
+  for (const agent of snapshot.agents) {
+    const key = `${source}:${agent.id}`;
+    const activity = agent.state === 'working' ? agent.activity : '';
+    if (activity && activity !== lastSeen.get(key)) addFeed(agent.id, agent.name, activity, 'work');
+    if (!activity && lastSeen.get(key) && agent.state === 'idle') addFeed(agent.id, agent.name, 'İşini bitirdi.', 'done');
+    if (agent.state === 'error' && lastSeen.get(key) !== '!') addFeed(agent.id, agent.name, 'Hata verdi.', 'error');
+    lastSeen.set(key, agent.state === 'error' ? '!' : activity);
+  }
+  const lines = snapshot.review?.lines ?? [];
+  const heard = snapshot.review ? heardLines.get(source) ?? 0 : 0;
+  const names = Object.fromEntries(snapshot.agents.map((a) => [a.id, a.name]));
+  for (const line of lines.slice(heard)) addFeed(line.who, names[line.who] ?? line.who, line.text, 'talk');
+  heardLines.set(source, lines.length);
+}
+
+function addFeed(who, name, text, kind) {
+  feedItems.push({ who, name, text, kind, time: new Date() });
+  if (feedItems.length > FEED_LIMIT) feedItems.shift();
+  const feed = $('feed');
+  const nearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+  feed.append(feedRow(feedItems.at(-1)));
+  while (feed.childElementCount > FEED_LIMIT) feed.firstElementChild.remove();
+  $('feedEmpty').hidden = true;
+  if (nearBottom) feed.scrollTop = feed.scrollHeight;
+  if (pane !== 'feed') document.querySelector('.side-tabs [data-pane="feed"]').dataset.fresh = 'true';
+}
+
+function feedRow({ who, name, text, kind, time }) {
+  const li = document.createElement('li');
+  li.className = `feed-item ${kind}`;
+  li.style.setProperty('--who', office.color(who));
+  const head = document.createElement('p');
+  head.append(Object.assign(document.createElement('b'), { textContent: name }),
+    Object.assign(document.createElement('time'), { textContent: time.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }));
+  li.append(head, Object.assign(document.createElement('p'), { textContent: text }));
+  return li;
+}
+
+// ── Header: the open project, the team, the time ────────────
+
+function showHud() {
+  const working = [...(team?.agents ?? []), ...(termTeam?.agents ?? [])].filter((a) => a.state === 'working').length;
+  const hud = $('hudTeam');
+  hud.textContent = working ? `${working} ajan çalışıyor` : team?.phase === 'review' ? 'toplantıda' : 'hazır';
+  hud.dataset.busy = String(working > 0);
+}
+
+function tick() {
+  const now = new Date();
+  $('hudClock').textContent = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  $('hudDate').textContent = now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', weekday: 'short' });
+}
+tick();
+setInterval(tick, 10_000);
+
 function showTeam(snapshot) {
   team = snapshot;
+  noteActivity('team', snapshot);
+  showHud();
   office.update(snapshot);
   showRoster(snapshot);
   showLiveMeeting();
@@ -716,6 +800,7 @@ const live = createLive({
       case 'tool':
         toolLine.textContent = `⟳ ${event.name}${event.summary ? ': ' + event.summary : ''}`;
         addOp(currentTurn ??= addTurn(''), event);
+        if (event.name === 'terminale_ver') addFeed('lider', 'Cuba', `Ekibe verdi → ${event.summary}`, 'order');
         break;
       case 'turn_complete':
         currentTurn = null;
@@ -927,6 +1012,10 @@ function showPane(next) {
     if (section.tagName !== 'BUTTON') section.hidden = section.dataset.pane !== next;
   }
   if (next === 'project') showProject();
+  if (next === 'feed') {
+    delete document.querySelector('.side-tabs [data-pane="feed"]').dataset.fresh;
+    $('feed').scrollTop = $('feed').scrollHeight;
+  }
 }
 for (const tab of document.querySelectorAll('.side-tabs button')) {
   tab.addEventListener('click', () => showPane(tab.dataset.pane));
@@ -937,6 +1026,8 @@ $('tabTerminal').addEventListener('click', () => showMode('terminal'));
 
 $('newSession').addEventListener('click', () => { stopAll(true); send({ type: 'new_session' }); });
 document.addEventListener('keydown', (e) => {
+  // Ctrl+K: type to Cuba without reaching for the mouse.
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('sayText').focus(); }
   // Inside the terminal Esc belongs to Claude Code, which stops its own turn with it.
   if (e.key === 'Escape' && !$('terminalWrap').contains(document.activeElement)) stopEveryone();
 });

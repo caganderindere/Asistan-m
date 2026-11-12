@@ -1,4 +1,4 @@
-// The office, seen from a corner above. Where each person is shows their real
+// The office, an orbital station seen from a corner above. Where each person is shows their real
 // state: at the desk while working, around the table while a plan awaits
 // approval or the team talks over finished work, by the coffee machine just
 // after finishing, on a sofa when idle for long.
@@ -8,8 +8,11 @@ const SIN = 0.5;
 const VIEW = { x: -610, y: -126, w: 1635, h: 1102 }; // what the projection covers, in drawing units
 const COFFEE_BREAK_S = 90;
 const WALK_SPEED = 240; // plan units per second
-const INK = '#1D2733';
-const GLASS = '#B5DAEE';
+const INK = '#E6F1FF';
+const GLASS = '#B5DAEE'; // a marker: windows look out into space
+const NEON = '#4FD8FF';
+const HUD = 'rgb(8 14 28 / .9)';
+const MIN_ZOOM = .6, MAX_ZOOM = 3.2, FIT_ZOOM = 1.1; // the station fills the view at FIT_ZOOM
 const PRINT_MS = 3500;
 const QUOTE_MS = 4000;
 // What people say as they take on work and hand it back.
@@ -17,22 +20,22 @@ const STARTING = ['Hallediyorum!', 'Hemen bakıyorum.', 'Tamamdır, başlıyorum
 const FINISHED = ['Bitti!', 'Teslim ettim.', 'Tamam, hazır.', 'İş tamam.', 'Raporu bıraktım.'];
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
-/** The window glass at this hour: daylight, dusk, night, dawn. */
+/** Space through the window at this hour: the station's day side, dusk, night, dawn. */
 function windowColor(hour = new Date().getHours()) {
-  if (hour >= 7 && hour < 17) return GLASS;
-  if (hour >= 17 && hour < 19) return '#E8B98A';
-  if (hour === 6) return '#C9C2E0';
-  return '#2B3A55';
+  if (hour >= 7 && hour < 17) return '#14295A'; // the station's day side
+  if (hour >= 17 && hour < 19) return '#2A1F55';
+  if (hour === 6) return '#1F2A5E';
+  return '#0A1330';
 }
 
 const PEOPLE = {
-  lider:       { short: 'Cuba',      color: '#C8860B', hair: '#2B211B', desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
-  kidemli:     { short: 'Kıdemli',     color: '#A23B72', hair: '#4A3426', desk: [145, 516], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
-  gelistirici: { short: 'Geliştirici', color: '#2B6CD4', hair: '#1F1B18', desk: [375, 516], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
-  testci:      { short: 'Testçi',      color: '#2D8F5B', hair: '#6B4A2E', desk: [810, 162], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
-  asistan:     { short: 'Asistan',     color: '#D9622B', hair: '#3A2A20', desk: [650, 510], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
+  lider:       { short: 'Cuba',        color: '#FFB547', hair: '#2B211B', desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
+  kidemli:     { short: 'Kıdemli',     color: '#FF5FA2', hair: '#4A3426', desk: [145, 516], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
+  gelistirici: { short: 'Geliştirici', color: '#4C9BFF', hair: '#1F1B18', desk: [375, 516], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
+  testci:      { short: 'Testçi',      color: '#39E09B', hair: '#6B4A2E', desk: [810, 162], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
+  asistan:     { short: 'Asistan',     color: '#FF8A3D', hair: '#3A2A20', desk: [650, 510], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
   // The boss: not in the team's snapshots, so the office adds him itself.
-  cagan:       { short: 'Çağan',       color: '#1D2733', hair: '#241C17', desk: [255, 110], meeting: [614, 140], coffee: [1150, 160], sofa: [1000, 465], visit: [255, 110] },
+  cagan:       { short: 'Çağan',       color: '#C9D6EE', hair: '#241C17', desk: [255, 110], meeting: [614, 140], coffee: [1150, 160], sofa: [1000, 465], visit: [255, 110] },
 };
 // Spots where one stands; everywhere else there is a seat.
 const STANDING = new Set([
@@ -46,13 +49,13 @@ const BOSS = { id: 'cagan', name: 'Çağan', state: 'idle', activity: '', second
 // ('north' at x, 'west' at y), or on a clear patch of floor.
 const ROOMS = [
   { name: 'Yönetim',        x: 20,  y: 20,  w: 280, h: 250, floor: 'wood',    sign: ['north', 40],       door: [[165, 255], [165, 310]] },
-  { name: 'Toplantı odası', x: 300, y: 20,  w: 380, h: 250, floor: '#B4BFCE', sign: ['north', 318],      door: [[490, 255], [490, 310]] },
-  { name: 'Kalite',         x: 680, y: 20,  w: 260, h: 250, floor: '#CADBCD', sign: ['north', 698],      door: [[815, 255], [815, 310]] },
+  { name: 'Toplantı odası', x: 300, y: 20,  w: 380, h: 250, floor: '#152038', sign: ['north', 318],      door: [[490, 255], [490, 310]] },
+  { name: 'Kalite',         x: 680, y: 20,  w: 260, h: 250, floor: '#11262A', sign: ['north', 698],      door: [[815, 255], [815, 310]] },
   { name: 'Mutfak',         x: 940, y: 20,  w: 240, h: 330, floor: 'tile',    sign: ['north', 958],      door: [[960, 310], [920, 310]] },
-  { name: '',               x: 20,  y: 270, w: 920, h: 80,  floor: '#DCE0DD', sign: null,                door: null },
-  { name: 'Mühendislik',    x: 20,  y: 350, w: 500, h: 350, floor: '#CAD4DF', sign: ['west', 684],       door: [[270, 368], [270, 310]] },
-  { name: 'Destek',         x: 520, y: 350, w: 260, h: 350, floor: '#E2D6C0', sign: ['floor', 596, 580], door: [[655, 368], [655, 310]] },
-  { name: 'Dinlenme',       x: 780, y: 350, w: 400, h: 350, floor: '#D8CCB9', sign: ['floor', 880, 676], door: [[850, 368], [850, 310]] },
+  { name: '',               x: 20,  y: 270, w: 920, h: 80,  floor: '#0F1828', sign: null,                door: null },
+  { name: 'Mühendislik',    x: 20,  y: 350, w: 500, h: 350, floor: '#131D34', sign: ['west', 684],       door: [[270, 368], [270, 310]] },
+  { name: 'Destek',         x: 520, y: 350, w: 260, h: 350, floor: '#1E1A30', sign: ['floor', 596, 580], door: [[655, 368], [655, 310]] },
+  { name: 'Dinlenme',       x: 780, y: 350, w: 400, h: 350, floor: '#181834', sign: ['floor', 880, 676], door: [[850, 368], [850, 310]] },
 ];
 const KITCHEN_TO_LOUNGE = [[1070, 332], [1070, 368]];
 
@@ -68,6 +71,11 @@ const WALLS = [
 ];
 
 const iso = (x, y, z = 0) => [(x - y) * COS, (x + y) * SIN - z];
+// [x, y, size, brightness] as fractions of the canvas, the same on every draw.
+const STARS = Array.from({ length: 220 }, (_, i) => {
+  const r = (n) => { const v = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return v - Math.floor(v); };
+  return [r(1), r(2), r(3) < .9 ? 1 : 2, .25 + r(4) * .65];
+});
 
 function shade(hex, factor) {
   const n = parseInt(hex.slice(1), 16);
@@ -88,21 +96,21 @@ function furniture() {
     things.push({ kind: 'cyl', cx: x, cy: y, r, x0: x - r, y0: y - r, x1: x + r, y1: y + r, z0: 0, h, color, ...extra });
   };
   const plant = (x, y, size = 1) => {
-    cyl(x, y, 8 * size, 12 * size, '#8A6A4A', { leaves: 15 * size });
+    cyl(x, y, 8 * size, 12 * size, '#2C3A52', { leaves: 15 * size });
   };
-  const chair = (x, y) => cyl(x, y, 10, 12, '#465362');
+  const chair = (x, y) => cyl(x, y, 10, 12, '#24304A');
   const desk = (owner, x, y, w, d, screens = 1) => {
-    box(x, y, w, d, 26, '#B98E5E');
+    box(x, y, w, d, 26, '#33415E');
     const total = screens * 44 + (screens - 1) * 8;
     for (let i = 0; i < screens; i += 1) {
-      box(x + (w - total) / 2 + i * 52, y + 9, 44, 4, 24, '#2A3441', { z0: 26, screen: owner });
+      box(x + (w - total) / 2 + i * 52, y + 9, 44, 4, 24, '#0B111C', { z0: 26, screen: owner });
     }
-    box(x + w / 2 - 20, y + d - 22, 40, 12, 1.5, '#E3E7EA', { z0: 26 });   // keyboard
-    cyl(x + w - 20, y + d - 18, 4.5, 7, '#F4F1EA', { z0: 26 });            // mug
-    box(x + 12, y + d - 30, 22, 18, .8, '#FBFBF8', { z0: 26 });            // paper
+    box(x + w / 2 - 20, y + d - 22, 40, 12, 1.5, '#5A6B8C', { z0: 26 });   // keyboard
+    cyl(x + w - 20, y + d - 18, 4.5, 7, '#9FB3D1', { z0: 26 });            // mug
+    box(x + 12, y + d - 30, 22, 18, .8, '#CFE9FF', { z0: 26 });            // paper
   };
   const books = (thing, along, count) => {
-    const colors = ['#A23B72', '#2B6CD4', '#C8860B', '#2D8F5B', '#D9622B', '#66727F'];
+    const colors = ['#FF5FA2', '#4C9BFF', '#FFB547', '#39E09B', '#FF8A3D', '#7F8DA6'];
     thing.decor = [];
     for (let row = 0; row < 2; row += 1) {
       for (let i = 0; i < count; i += 1) {
@@ -112,31 +120,31 @@ function furniture() {
   };
 
   for (const [x1, y1, x2, y2, h] of WALLS) {
-    const wall = x1 === x2 ? box(x1 - 3, y1, 6, y2 - y1, h, '#EEF0EC') : box(x1, y1 - 3, x2 - x1, 6, h, '#EEF0EC');
+    const wall = x1 === x2 ? box(x1 - 3, y1, 6, y2 - y1, h, '#2A3550') : box(x1, y1 - 3, x2 - x1, 6, h, '#2A3550');
     wall.wall = true;
-    if (h !== TALL) wall.color = h === CUT ? '#C9D0CD' : '#E4E8E4';
+    if (h !== TALL) wall.color = h === CUT ? '#1C2438' : '#26314A';
   }
   const north = things[0];
   const west = [things[1], things[2]];
   const glass = GLASS;
   north.decor = [
     { face: 'south', a0: 190, a1: 262, z0: 34, z1: 78, color: glass },                       // Yönetim window
-    { face: 'south', a0: 405, a1: 535, z0: 36, z1: 80, color: '#1F2731', lit: 'wallScreen' }, // meeting room screen
-    { face: 'south', a0: 684, a1: 790, z0: 38, z1: 76, color: '#FBFBF8' },                   // Kalite board
-    { face: 'south', a0: 692, a1: 718, z0: 56, z1: 70, color: '#2D8F5B' },
-    { face: 'south', a0: 724, a1: 750, z0: 56, z1: 70, color: '#C8860B' },
-    { face: 'south', a0: 756, a1: 782, z0: 56, z1: 70, color: '#D0362F' },
+    { face: 'south', a0: 405, a1: 535, z0: 36, z1: 80, color: '#081020', lit: 'wallScreen' }, // meeting room screen
+    { face: 'south', a0: 684, a1: 790, z0: 38, z1: 76, color: '#CFE9FF' },                   // Kalite board
+    { face: 'south', a0: 692, a1: 718, z0: 56, z1: 70, color: '#39E09B' },
+    { face: 'south', a0: 724, a1: 750, z0: 56, z1: 70, color: '#FFB547' },
+    { face: 'south', a0: 756, a1: 782, z0: 56, z1: 70, color: '#FF4D5E' },
     { face: 'south', a0: 830, a1: 905, z0: 34, z1: 78, color: glass },
     { face: 'south', a0: 980, a1: 1140, z0: 52, z1: 82, color: glass },                      // above the counter
   ];
-  west[0].decor = [{ face: 'east', a0: 70, a1: 170, z0: 34, z1: 76, color: '#FBFBF8' }];     // Yönetim whiteboard
+  west[0].decor = [{ face: 'east', a0: 70, a1: 170, z0: 34, z1: 76, color: '#CFE9FF' }];     // Yönetim whiteboard
   west[1].decor = [
     { face: 'east', a0: 75, a1: 165, z0: 34, z1: 78, color: glass },
     { face: 'east', a0: 215, a1: 305, z0: 34, z1: 78, color: glass },
   ];
 
   // Yönetim
-  books(box(40, 26, 130, 16, 62, '#7A5B3C'), 130, 10);
+  books(box(40, 26, 130, 16, 62, '#1E2840'), 130, 10);
   plant(272, 48, 1.15);
   chair(120, 62); chair(210, 62);
   desk('lider', 85, 96, 160, 62);
@@ -144,66 +152,66 @@ function furniture() {
 
   // Toplantı odası
   for (const person of Object.values(PEOPLE)) chair(...person.meeting);
-  box(390, 105, 200, 70, 24, '#B98E5E', { table: true });
+  box(390, 105, 200, 70, 24, '#33415E', { table: true });
   plant(322, 44); plant(656, 246);
 
   // Kalite
   desk('testci', 735, 82, 150, 58, 2);
   chair(810, 162);
-  const rack = box(898, 60, 30, 150, 70, '#4C5A6A');
+  const rack = box(898, 60, 30, 150, 70, '#1A2236');
   rack.decor = [0, 1, 2, 3].flatMap((i) => [
-    { face: 'east', a0: 10 + i * 36, a1: 34 + i * 36, z0: 10, z1: 60, color: '#1F2731' },
-    { face: 'east', a0: 26 + i * 36, a1: 30 + i * 36, z0: 50, z1: 54, color: i % 2 ? '#5FD08F' : '#DDA63A' },
+    { face: 'east', a0: 10 + i * 36, a1: 34 + i * 36, z0: 10, z1: 60, color: '#081020' },
+    { face: 'east', a0: 26 + i * 36, a1: 30 + i * 36, z0: 50, z1: 54, color: i % 2 ? '#39E09B' : '#FFB547' },
   ]);
   plant(916, 244);
   // Reports come out here.
-  box(698, 206, 36, 28, 30, '#D9DDE0', { printer: true });
+  box(698, 206, 36, 28, 30, '#3A4766', { printer: true });
 
   // Mutfak
-  box(948, 26, 224, 36, 30, '#F6F7F5');
-  box(962, 32, 38, 24, 20, '#2A3441', { z0: 30 });                        // coffee machine
-  for (const x of [1016, 1030, 1044]) cyl(x, 46, 4.5, 7, '#F4F1EA', { z0: 30 });
-  box(1066, 34, 44, 22, 1, '#B9C3CB', { z0: 30 });                        // sink
-  box(1122, 34, 40, 22, 1.5, '#39434F', { z0: 30 });                      // hob
-  box(1138, 80, 36, 54, 66, '#DCE3E8');                                   // fridge
-  for (const [x, y] of [[1016, 222], [1108, 222], [1062, 270]]) cyl(x, y, 9, 16, '#465362');
-  cyl(1062, 222, 27, 28, '#B98E5E');
-  cyl(1054, 216, 4.5, 7, '#F4F1EA', { z0: 28 }); cyl(1072, 228, 4.5, 7, '#F4F1EA', { z0: 28 });
+  box(948, 26, 224, 36, 30, '#2A3550');
+  box(962, 32, 38, 24, 20, '#0B111C', { z0: 30 });                        // coffee machine
+  for (const x of [1016, 1030, 1044]) cyl(x, 46, 4.5, 7, '#9FB3D1', { z0: 30 });
+  box(1066, 34, 44, 22, 1, '#4A5A7A', { z0: 30 });                        // sink
+  box(1122, 34, 40, 22, 1.5, '#141B2B', { z0: 30 });                      // hob
+  box(1138, 80, 36, 54, 66, '#3A4766');                                   // fridge
+  for (const [x, y] of [[1016, 222], [1108, 222], [1062, 270]]) cyl(x, y, 9, 16, '#24304A');
+  cyl(1062, 222, 27, 28, '#33415E');
+  cyl(1054, 216, 4.5, 7, '#9FB3D1', { z0: 28 }); cyl(1072, 228, 4.5, 7, '#9FB3D1', { z0: 28 });
   plant(1120, 326);
-  box(1150, 292, 22, 38, 26, '#3D4957');                                  // bin
+  box(1150, 292, 22, 38, 26, '#1A2236');                                  // bin
 
   // Koridor
-  box(880, 276, 22, 22, 34, '#DCE3E8');                                   // water cooler
-  cyl(891, 287, 7, 16, '#8FC1E3', { z0: 34 });
+  box(880, 276, 22, 22, 34, '#3A4766');                                   // water cooler
+  cyl(891, 287, 7, 16, '#4FD8FF', { z0: 34 });
   plant(560, 288, .85);
 
   // Mühendislik
-  books(box(40, 358, 100, 16, 46, '#7A5B3C'), 100, 8);
+  books(box(40, 358, 100, 16, 46, '#1E2840'), 100, 8);
   desk('kidemli', 65, 432, 160, 62, 2);
   desk('gelistirici', 295, 432, 160, 62);
   chair(145, 516); chair(375, 516);
-  box(400, 600, 90, 60, 24, '#B98E5E');                                   // spare desk
-  box(423, 610, 44, 4, 24, '#2A3441', { z0: 24 });
+  box(400, 600, 90, 60, 24, '#33415E');                                   // spare desk
+  box(423, 610, 44, 4, 24, '#0B111C', { z0: 24 });
   plant(492, 380, 1.1); plant(496, 674, 1.1);
 
   // Destek
   desk('asistan', 575, 430, 150, 58);
   chair(650, 510);
-  const cabinets = box(536, 600, 46, 84, 42, '#8D99A6');
-  cabinets.decor = [0, 1, 2].map((i) => ({ face: 'east', a0: 4 + i * 27, a1: 26 + i * 27, z0: 6, z1: 36, color: '#AEB8C2' }));
-  box(700, 640, 60, 44, 22, '#B98E5E');
-  box(706, 646, 48, 32, 14, '#E1E6E9', { z0: 22 });                       // printer
+  const cabinets = box(536, 600, 46, 84, 42, '#2C3A52');
+  cabinets.decor = [0, 1, 2].map((i) => ({ face: 'east', a0: 4 + i * 27, a1: 26 + i * 27, z0: 6, z1: 36, color: '#3E4E6E' }));
+  box(700, 640, 60, 44, 22, '#33415E');
+  box(706, 646, 48, 32, 14, '#4A5A7A', { z0: 22 });                       // printer
   plant(756, 378);
 
   // Dinlenme
-  box(792, 430, 12, 190, 32, '#4F6F7B'); box(804, 430, 38, 190, 14, '#7FA3B0');   // sofa by the wall
-  box(895, 358, 140, 12, 32, '#4F6F7B'); box(895, 370, 140, 36, 14, '#7FA3B0');   // sofa under the window
-  box(900, 470, 110, 54, 13, '#B98E5E');                                  // coffee table
-  box(916, 482, 30, 20, 2, '#A23B72', { z0: 13 });
-  cyl(984, 508, 4.5, 7, '#F4F1EA', { z0: 13 });
-  cyl(1090, 610, 18, 15, '#C8860B');                                      // pouf
-  box(1146, 440, 24, 130, 20, '#7A5B3C');                                 // TV unit
-  box(1160, 452, 4, 106, 46, '#1F2731', { z0: 20 });
+  box(792, 430, 12, 190, 32, '#2B3F6B'); box(804, 430, 38, 190, 14, '#3D5A94');   // sofa by the wall
+  box(895, 358, 140, 12, 32, '#2B3F6B'); box(895, 370, 140, 36, 14, '#3D5A94');   // sofa under the window
+  box(900, 470, 110, 54, 13, '#33415E');                                  // coffee table
+  box(916, 482, 30, 20, 2, '#FF5FA2', { z0: 13 });
+  cyl(984, 508, 4.5, 7, '#9FB3D1', { z0: 13 });
+  cyl(1090, 610, 18, 15, '#FFB547');                                      // pouf
+  box(1146, 440, 24, 130, 20, '#1E2840');                                 // TV unit
+  box(1160, 452, 4, 106, 46, '#081020', { z0: 20 });
   plant(1152, 378, 1.15); plant(1150, 676, 1.1);
 
   things.forEach((thing, index) => { thing.order = index; });
@@ -311,6 +319,8 @@ export function createOffice(canvas, onSelect) {
   let lit = new Set();
   let scale = 1;
   let offset = [0, 0]; // where the drawing starts on the canvas, in CSS pixels
+  let zoom = FIT_ZOOM; // on top of the size that fits the canvas
+  let pan = [0, 0]; // how far the user has dragged the office, in CSS pixels
   let lastFrame = 0;
   let dirty = true;
   let printedAt = -Infinity;
@@ -336,11 +346,11 @@ export function createOffice(canvas, onSelect) {
     if (snapshot.phase === 'review' && spot === 'meeting') {
       if (snapshot.review.speaker === agent.id) return '…';
       const last = snapshot.review.lines.at(-1);
-      return last?.who === agent.id ? shorten(last.text, 46) : '';
+      return last?.who === agent.id ? shorten(last.text, 160) : '';
     }
     if (agent.id === 'lider' && snapshot.question) return '?';
     if (agent.state === 'error') return 'Hata';
-    return agent.state === 'working' && spot === 'desk' ? shorten(agent.activity) : '';
+    return agent.state === 'working' && spot === 'desk' ? shorten(agent.activity, 90) : '';
   }
 
   function arrange() {
@@ -415,12 +425,21 @@ export function createOffice(canvas, onSelect) {
 
   function drawBox(t) {
     const z1 = t.z0 + t.h;
-    const south = t.screen && lit.has(t.screen) ? '#8FD3FF' : shade(t.color, .84);
+    const south = t.screen && lit.has(t.screen) ? '#5FE3FF' : shade(t.color, .84);
     poly([iso(t.x0, t.y1, z1), iso(t.x1, t.y1, z1), iso(t.x1, t.y1, t.z0), iso(t.x0, t.y1, t.z0)], south);
     poly([iso(t.x1, t.y0, z1), iso(t.x1, t.y1, z1), iso(t.x1, t.y1, t.z0), iso(t.x1, t.y0, t.z0)], shade(t.color, .68));
     poly([iso(t.x0, t.y0, z1), iso(t.x1, t.y0, z1), iso(t.x1, t.y1, z1), iso(t.x0, t.y1, z1)], t.color);
+    if (t.wall) {
+      ctx.beginPath();
+      ctx.moveTo(...iso(t.x0, t.y1, z1));
+      ctx.lineTo(...iso(t.x1, t.y1, z1));
+      ctx.lineTo(...iso(t.x1, t.y0, z1));
+      ctx.strokeStyle = t.h === TALL ? 'rgb(79 216 255 / .7)' : 'rgb(79 216 255 / .35)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
     for (const d of t.decor ?? []) {
-      const color = d.lit && lit.has(d.lit) ? '#8FD3FF' : d.color === GLASS ? windowColor() : d.color;
+      const color = d.lit && lit.has(d.lit) ? '#5FE3FF' : d.color === GLASS ? windowColor() : d.color;
       const z = [t.z0 + d.z0, t.z0 + d.z1];
       if (d.face === 'south') {
         poly([iso(t.x0 + d.a0, t.y1, z[1]), iso(t.x0 + d.a1, t.y1, z[1]), iso(t.x0 + d.a1, t.y1, z[0]), iso(t.x0 + d.a0, t.y1, z[0])], color);
@@ -435,9 +454,14 @@ export function createOffice(canvas, onSelect) {
       poly([iso(t.x0 + 7, t.y1 - 8, z1 + 1), iso(t.x1 - 7, t.y1 - 8, z1 + 1),
         iso(t.x1 - 7, t.y1 - 8 + out, z1 + 1), iso(t.x0 + 7, t.y1 - 8 + out, z1 + 1)], '#FFFFFF');
     }
-    if (t.table && latest?.phase === 'meeting') {
-      // The plan lies on the table until it is approved.
-      poly([iso(470, 128, z1), iso(512, 128, z1), iso(512, 152, z1), iso(470, 152, z1)], '#FBFBF8');
+    if (t.table && (latest?.phase === 'meeting' || latest?.phase === 'review')) {
+      // A hologram stands over the table while the team talks or a plan awaits approval.
+      const glow = .35 + .15 * Math.sin(performance.now() / 400);
+      ctx.globalAlpha = glow;
+      poly([iso(440, 125, z1), iso(540, 125, z1), iso(540, 155, z1), iso(440, 155, z1)], NEON);
+      ctx.globalAlpha = glow * .5;
+      poly([iso(450, 140, z1), iso(530, 140, z1), iso(530, 140, z1 + 70), iso(450, 140, z1 + 70)], NEON);
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -458,7 +482,7 @@ export function createOffice(canvas, onSelect) {
     ctx.fillStyle = t.color;
     ctx.fill();
     if (t.leaves) {
-      for (const [dx, dy, r, color] of [[0, -8, 1, '#3F7D4F'], [-7, -2, .72, '#4E9360'], [7, -3, .7, '#5FA06C'], [0, -17, .62, '#5FA06C']]) {
+      for (const [dx, dy, r, color] of [[0, -8, 1, '#1FA97A'], [-7, -2, .72, '#2ED39A'], [7, -3, .7, '#5CF2BE'], [0, -17, .62, '#5CF2BE']]) {
         ctx.beginPath();
         ctx.arc(bx + dx * t.leaves / 15, ty + dy * t.leaves / 15, t.leaves * r, 0, Math.PI * 2);
         ctx.fillStyle = color;
@@ -476,7 +500,7 @@ export function createOffice(canvas, onSelect) {
 
     ctx.beginPath();
     ctx.ellipse(fx, fy, 17, 9, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgb(0 0 0 / .16)';
+    ctx.fillStyle = 'rgb(0 0 0 / .45)';
     ctx.fill();
     if (selected === p.id || working || p.state === 'error') {
       const pulse = working && !calm.matches ? (time / 1400) % 1 : .35;
@@ -488,7 +512,7 @@ export function createOffice(canvas, onSelect) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    if (!p.seated) drawCyl({ cx: p.x, cy: p.y, r: 6.5, z0: 0, h: 16, color: '#39434F' });      // legs
+    if (!p.seated) drawCyl({ cx: p.x, cy: p.y, r: 6.5, z0: 0, h: 16, color: '#141B2B' });      // legs
     const torso = { cx: p.x, cy: p.y, r: 8.5, z0: (p.seated ? seat : 16) + bob, h: 22, color: p.spec.color };
     drawCyl(torso);
     const [hx, hy] = iso(p.x, p.y, torso.z0 + torso.h + 7);
@@ -507,37 +531,36 @@ export function createOffice(canvas, onSelect) {
     ctx.save();
     ctx.transform(COS, SIN, -COS, SIN, 0, 0); // plan coordinates now land on the floor
     for (const room of ROOMS) {
-      ctx.fillStyle = room.floor === 'wood' ? '#D6BC95' : room.floor === 'tile' ? '#E9EDEF' : room.floor;
+      ctx.fillStyle = room.floor === 'wood' ? '#1D1A33' : room.floor === 'tile' ? '#16213A' : room.floor;
       ctx.fillRect(room.x, room.y, room.w, room.h);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      if (room.floor === 'wood') {
-        ctx.strokeStyle = '#C2A880';
-        for (let y = room.y + 14; y < room.y + room.h; y += 14) { ctx.moveTo(room.x, y); ctx.lineTo(room.x + room.w, y); }
-      } else if (room.floor === 'tile') {
-        ctx.strokeStyle = '#CBD3D8';
-        for (let y = room.y + 24; y < room.y + room.h; y += 24) { ctx.moveTo(room.x, y); ctx.lineTo(room.x + room.w, y); }
-        for (let x = room.x + 24; x < room.x + room.w; x += 24) { ctx.moveTo(x, room.y); ctx.lineTo(x, room.y + room.h); }
-      }
+      // Deck plates: the command room's are gold-seamed, the galley's finer.
+      const step = room.floor === 'tile' ? 24 : 40;
+      ctx.strokeStyle = room.floor === 'wood' ? 'rgb(255 181 71 / .14)' : 'rgb(120 190 255 / .08)';
+      for (let y = room.y + step; y < room.y + room.h; y += step) { ctx.moveTo(room.x, y); ctx.lineTo(room.x + room.w, y); }
+      for (let x = room.x + step; x < room.x + room.w; x += step) { ctx.moveTo(x, room.y); ctx.lineTo(x, room.y + room.h); }
       ctx.stroke();
     }
-    const rug = (x, y, w, h, color, edge) => {
-      ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = edge; ctx.lineWidth = 2; ctx.strokeRect(x + 8, y + 8, w - 16, h - 16);
+    const pad = (x, y, w, h, color) => {
+      ctx.fillStyle = `${color}14`; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = `${color}88`; ctx.lineWidth = 2; ctx.strokeRect(x + 8, y + 8, w - 16, h - 16);
+      ctx.strokeStyle = `${color}33`; ctx.lineWidth = 1; ctx.strokeRect(x + 16, y + 16, w - 32, h - 32);
     };
-    rug(60, 164, 210, 92, '#B4625B', '#F1DFC6');
-    rug(60, 540, 300, 130, '#8E9FB8', '#CAD4DF');
-    rug(870, 430, 200, 150, '#7FA9A3', '#EAF1EE');
-    ctx.fillStyle = '#C5CBC8'; ctx.fillRect(90, 301, 780, 18);     // corridor runner
-    ctx.fillStyle = '#8D7B62'; ctx.fillRect(28, 290, 34, 40);      // doormat
+    pad(60, 164, 210, 92, '#FFB547');
+    pad(60, 540, 300, 130, '#4C9BFF');
+    pad(870, 430, 200, 150, '#5CF2BE');
+    ctx.fillStyle = 'rgb(79 216 255 / .08)'; ctx.fillRect(90, 301, 780, 18);   // corridor light strip
+    ctx.fillStyle = 'rgb(79 216 255 / .5)'; ctx.fillRect(90, 309, 780, 2);
+    ctx.fillStyle = '#2A3550'; ctx.fillRect(28, 290, 34, 40);                  // airlock plate
     signs('floor');
     ctx.restore();
   }
 
   /** Paint room names where *where* says: lying on the floor, or upright on a back wall. */
   function signs(where) {
-    ctx.font = '600 24px Bahnschrift, "Segoe UI", sans-serif';
-    ctx.fillStyle = 'rgb(29 39 51 / .55)';
+    ctx.font = '600 22px Bahnschrift, "Segoe UI", sans-serif';
+    ctx.fillStyle = 'rgb(120 220 255 / .6)';
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
     for (const room of ROOMS) {
@@ -552,11 +575,50 @@ export function createOffice(canvas, onSelect) {
     }
   }
 
+  /** Stars, a nebula and a planet, fixed to the screen so the station seems to drift past them. */
+  function drawSpace(width, height) {
+    const sky = ctx.createRadialGradient(width * .7, height * .2, 0, width * .7, height * .2, Math.max(width, height));
+    sky.addColorStop(0, '#16224A');
+    sky.addColorStop(.45, '#0A1028');
+    sky.addColorStop(1, '#04060F');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, width, height);
+    const nebula = ctx.createRadialGradient(width * .15, height * .85, 0, width * .15, height * .85, width * .5);
+    nebula.addColorStop(0, 'rgb(140 70 255 / .18)');
+    nebula.addColorStop(1, 'rgb(140 70 255 / 0)');
+    ctx.fillStyle = nebula;
+    ctx.fillRect(0, 0, width, height);
+    for (const [sx, sy, r, a] of STARS) {
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(sx * width, sy * height, r, r);
+    }
+    ctx.globalAlpha = 1;
+    const [px, py, pr] = [width * .9, height * .9, Math.min(width, height) * .22];
+    const planet = ctx.createRadialGradient(px - pr * .4, py - pr * .4, pr * .1, px, py, pr);
+    planet.addColorStop(0, '#3B7BD9');
+    planet.addColorStop(.7, '#123A7A');
+    planet.addColorStop(1, '#050B1E');
+    ctx.beginPath();
+    ctx.arc(px, py, pr, 0, Math.PI * 2);
+    ctx.fillStyle = planet;
+    ctx.fill();
+    ctx.strokeStyle = 'rgb(120 200 255 / .35)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
   function drawSlab() {
     const [x0, y0, x1, y1, drop] = [17, 17, 1183, 703, 18];
-    poly([iso(x0, y1), iso(x1, y1), iso(x1, y1, -drop), iso(x0, y1, -drop)], '#AEB6B2');
-    poly([iso(x1, y0), iso(x1, y1), iso(x1, y1, -drop), iso(x1, y0, -drop)], '#98A09C');
-    poly([iso(x0, y0), iso(x1, y0), iso(x1, y1), iso(x0, y1)], '#DCE0DD');
+    poly([iso(x0, y1), iso(x1, y1), iso(x1, y1, -drop), iso(x0, y1, -drop)], '#0F1626');
+    poly([iso(x1, y0), iso(x1, y1), iso(x1, y1, -drop), iso(x1, y0, -drop)], '#0A0F1B');
+    poly([iso(x0, y0), iso(x1, y0), iso(x1, y1), iso(x0, y1)], '#111A2C');
+    // The hull's running lights.
+    ctx.beginPath();
+    ctx.moveTo(...iso(x0, y1, -drop / 2)); ctx.lineTo(...iso(x1, y1, -drop / 2)); ctx.lineTo(...iso(x1, y0, -drop / 2));
+    ctx.strokeStyle = 'rgb(79 216 255 / .55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
 
   /** Names and speech bubbles are drawn at screen size so they stay readable when the office is small. */
@@ -575,24 +637,51 @@ export function createOffice(canvas, onSelect) {
       ctx.fillStyle = ink;
       ctx.fillText(text, x, y + .5);
     };
+    /** A speech bubble of up to three lines, its tail pointing down at *y*. */
+    const bubble = (x, y, text, edge) => {
+      const lines = wrap(text, 210).slice(0, 3);
+      const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
+      const height = lines.length * 15 + 10;
+      const top = y - height - 6;
+      ctx.beginPath();
+      ctx.roundRect(x - width / 2, top, width, height, 8);
+      ctx.moveTo(x - 5, top + height); ctx.lineTo(x, top + height + 6); ctx.lineTo(x + 5, top + height);
+      ctx.fillStyle = HUD;
+      ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = INK;
+      lines.forEach((line, i) => ctx.fillText(line, x, top + 12 + i * 15));
+    };
+    const wrap = (text, max) => {
+      const lines = [''];
+      for (const word of text.split(' ')) {
+        const next = lines.at(-1) ? `${lines.at(-1)} ${word}` : word;
+        if (ctx.measureText(next).width > max && lines.at(-1)) lines.push(word); else lines[lines.length - 1] = next;
+      }
+      if (lines.length > 3) lines[2] = `${lines[2].slice(0, -1)}…`;
+      return lines;
+    };
+    // The board and clock hang on the wall, behind whatever people say.
+    drawBoard(onScreen);
+    drawClock(onScreen);
     const byHeight = Object.values(people).filter((p) => p.head).sort((a, b) => a.head[1] - b.head[1]);
     for (const p of byHeight) {
       const [x, y] = onScreen(p.head);
       const above = y - 9 * scale - 13;
       ctx.font = '600 11.5px Bahnschrift, "Segoe UI", sans-serif';
-      pill(x, above, p.spec.short, selected === p.id ? p.spec.color : INK, '#FFFFFF');
+      pill(x, above, p.spec.short, selected === p.id ? p.spec.color : HUD, selected === p.id ? '#081020' : INK, p.spec.color);
       if (p.says && (!p.path.length || p.saying)) {
         ctx.font = '11.5px Bahnschrift, "Segoe UI", sans-serif';
-        pill(x, above - 21, p.says, '#FFFFFF', INK, INK);
+        bubble(x, above - 10, p.says, p.spec.color);
       }
       p.hit = [x, y];
     }
-    drawBoard(onScreen);
-    drawClock(onScreen);
     if (performance.now() - printedAt < PRINT_MS) {
       const [x, y] = onScreen(iso(716, 220, 60));
       ctx.font = '600 11px Bahnschrift, "Segoe UI", sans-serif';
-      pill(x, y, '🖨 Rapor hazır', '#FFFFFF', INK, INK);
+      pill(x, y, '🖨 Rapor hazır', HUD, INK, NEON);
     }
   }
 
@@ -616,12 +705,15 @@ export function createOffice(canvas, onSelect) {
     const height = 18 + lines.length * 14;
     ctx.beginPath();
     ctx.roundRect(cx - width / 2, cy - height, width, height, 6);
-    ctx.fillStyle = 'rgb(31 39 49 / .92)';
+    ctx.fillStyle = HUD;
     ctx.fill();
+    ctx.strokeStyle = 'rgb(79 216 255 / .6)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#8FD3FF';
+    ctx.fillStyle = NEON;
     ctx.font = '600 10px Bahnschrift, "Segoe UI", sans-serif';
-    ctx.fillText('PANO', cx - width / 2 + 8, cy - height + 10);
+    ctx.fillText('GÖREV PANOSU', cx - width / 2 + 8, cy - height + 10);
     ctx.fillStyle = '#EDF0EE';
     ctx.font = '10.5px Bahnschrift, "Segoe UI", sans-serif';
     lines.forEach((line, i) => ctx.fillText(line, cx - width / 2 + 8, cy - height + 24 + i * 14));
@@ -635,9 +727,9 @@ export function createOffice(canvas, onSelect) {
     const now = new Date();
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = HUD;
     ctx.fill();
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = NEON;
     ctx.lineWidth = 1.5;
     ctx.stroke();
     const hand = (turns, length, width) => {
@@ -660,10 +752,10 @@ export function createOffice(canvas, onSelect) {
       canvas.width = Math.round(box.width * ratio);
       canvas.height = Math.round(box.height * ratio);
     }
-    scale = Math.min(box.width / VIEW.w, box.height / VIEW.h);
-    offset = [(box.width - VIEW.w * scale) / 2, (box.height - VIEW.h * scale) / 2];
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    scale = Math.min(box.width / VIEW.w, box.height / VIEW.h) * zoom;
+    offset = [(box.width - VIEW.w * scale) / 2 + pan[0], (box.height - VIEW.h * scale) / 2 + pan[1]];
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawSpace(box.width, box.height);
     const k = ratio * scale;
     ctx.setTransform(k, 0, 0, k, (offset[0] - VIEW.x * scale) * ratio, (offset[1] - VIEW.y * scale) * ratio);
     drawSlab();
@@ -685,7 +777,7 @@ export function createOffice(canvas, onSelect) {
     requestAnimationFrame(frame);
     const moving = walk(Math.min(.1, (time - lastFrame) / 1000));
     const alive = moving || Object.values(people).some((p) => p.state === 'working')
-      || performance.now() - printedAt < PRINT_MS;
+      || performance.now() - printedAt < PRINT_MS || latest?.phase === 'meeting' || latest?.phase === 'review';
     // Nothing moves in a resting office, so it is not redrawn.
     if (!dirty && !(alive && !calm.matches)) { lastFrame = time; return; }
     if (alive && !moving && time - lastFrame < 33) return; // the pulse needs no more than 30 frames a second
@@ -702,8 +794,57 @@ export function createOffice(canvas, onSelect) {
       .sort((a, b) => b.hit[1] - a.hit[1])[0];
   }
 
-  canvas.addEventListener('click', (e) => { const p = personAt(e); if (p) onSelect(p.id); });
-  canvas.addEventListener('mousemove', (e) => { canvas.style.cursor = personAt(e) ? 'pointer' : ''; });
+  // Drag to move the office, wheel to zoom towards the pointer, double-click to see it all again.
+  let drag = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    drag = { x: e.clientX, y: e.clientY, pan: [...pan], moved: false };
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) { canvas.style.cursor = personAt(e) ? 'pointer' : 'grab'; return; }
+    const [dx, dy] = [e.clientX - drag.x, e.clientY - drag.y];
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    pan = [drag.pan[0] + dx, drag.pan[1] + dy];
+    canvas.style.cursor = 'grabbing';
+    dirty = true;
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if (drag && !drag.moved) { const p = personAt(e); if (p) onSelect(p.id); }
+    drag = null;
+  });
+  canvas.addEventListener('pointercancel', () => { drag = null; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomBy(Math.exp(-e.deltaY * .0015), e);
+  }, { passive: false });
+  canvas.addEventListener('dblclick', () => { zoom = FIT_ZOOM; pan = [0, 0]; dirty = true; });
+
+  /** Zoom by *factor*, keeping the point under *at* (a pointer event) where it is. */
+  function zoomBy(factor, at) {
+    const box = canvas.getBoundingClientRect();
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+    const [cx, cy] = at ? [at.clientX - box.left, at.clientY - box.top] : [box.width / 2, box.height / 2];
+    // The canvas centre moves with pan; points keep their distance to it in proportion to the zoom.
+    const [mx, my] = [box.width / 2 + pan[0], box.height / 2 + pan[1]];
+    pan = [pan[0] + (cx - mx) * (1 - next / zoom), pan[1] + (cy - my) * (1 - next / zoom)];
+    zoom = next;
+    dirty = true;
+  }
+
+  const controls = document.createElement('div');
+  controls.className = 'office-controls';
+  for (const [label, title, act] of [
+    ['+', 'Yakınlaştır', () => zoomBy(1.25)],
+    ['−', 'Uzaklaştır', () => zoomBy(.8)],
+    ['⟲', 'Ofisin tamamı (çift tık)', () => { zoom = FIT_ZOOM; pan = [0, 0]; dirty = true; }],
+  ]) {
+    const button = Object.assign(document.createElement('button'), { type: 'button', textContent: label, title });
+    button.setAttribute('aria-label', title);
+    button.addEventListener('click', act);
+    controls.append(button);
+  }
+  canvas.after(controls);
   new ResizeObserver(() => { dirty = true; }).observe(canvas);
   // People drift from the coffee machine to the sofa as time passes.
   // People drift on as time passes; the clock and the windows follow the hour.
@@ -714,7 +855,7 @@ export function createOffice(canvas, onSelect) {
     update(snapshot) { latest = { ...snapshot, agents: [...snapshot.agents, BOSS] }; seenAt = Date.now(); arrange(); },
     select(id) { selected = id; dirty = true; },
     where(agent) { return latest ? describe(agent, spotOf(agent, latest), latest) : ''; },
-    color(id) { return PEOPLE[id]?.color ?? '#66727F'; },
+    color(id) { return PEOPLE[id]?.color ?? '#7F8DA6'; },
     /** A report came out: the printer prints it. */
     print() { printedAt = performance.now(); dirty = true; },
   };
