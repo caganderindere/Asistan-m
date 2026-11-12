@@ -4,7 +4,7 @@ const CALIBRATION_MS = 400;
 const SILENCE_AFTER_SPEECH_MS = 1500;
 const MAX_UTTERANCE_MS = 30000;
 const MIN_SPEECH_RMS = 0.008;
-// Calibration can catch the end of Daim's own voice or the user starting to
+// Calibration can catch the end of Cuba's own voice or the user starting to
 // speak at once; a floor that high would make the user's voice count as noise.
 const MAX_NOISE_FLOOR = 0.012;
 // How much louder than the room a sound must be to count as speech.
@@ -15,7 +15,7 @@ const SPEECH_TICKS = 2;
 
 /**
  * Options: onSpeech, called once when speech starts; minRms, a louder floor
- * (used while Daim talks, so its own voice through speakers is not taken for the user's).
+ * (used while Cuba talks, so its own voice through speakers is not taken for the user's).
  */
 export function monitorSilence(stream, onSilence, { onSpeech = null, minRms = MIN_SPEECH_RMS } = {}) {
   const context = new AudioContext();

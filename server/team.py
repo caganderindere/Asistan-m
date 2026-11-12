@@ -43,7 +43,7 @@ class Role:
 
 
 ROLES: tuple[Role, ...] = (
-    Role(LEAD, "Daim", "Yönetim", "Çağan ile konuşur, işi planlar ve dağıtır, sonucu raporlar."),
+    Role(LEAD, "Cuba", "Yönetim", "Çağan ile konuşur, işi planlar ve dağıtır, sonucu raporlar."),
     Role("kidemli", "Kıdemli Geliştirici", "Mühendislik",
          "Zor işler: mimari kararlar, karmaşık hatalar, çok dosyalı değişiklikler."),
     Role("gelistirici", "Geliştirici", "Mühendislik",
@@ -489,7 +489,7 @@ class Team:
             )
         return "\n\n".join([
             "[EKİP TOPLANTISI]\nİşler bitti; ekip sonuçları kendi arasında konuşuyor. "
-            "Toplantıdan sonra Daim, Çağan'a özet verecek.",
+            "Toplantıdan sonra Cuba, Çağan'a özet verecek.",
             "Raporlar:\n" + "\n\n".join(meeting.reports),
             "Şimdiye kadar söylenenler:\n" + (said or "Henüz kimse konuşmadı; ilk sözü sen alıyorsun."),
             turn + " Araç kullanma, dosya değiştirme. Düz konuşma diliyle yaz; liste, başlık ya da kod yazma.",
@@ -530,7 +530,7 @@ class Team:
         except OSError:
             logger.exception("report could not be sent to the lead")
             lead.state = "error"
-            self._lead_events.put_nowait(TurnResult("", True, "Daim'e ulaşılamadı."))
+            self._lead_events.put_nowait(TurnResult("", True, "Cuba'ya ulaşılamadı."))
             self._touch()
 
     def _touch(self) -> None:

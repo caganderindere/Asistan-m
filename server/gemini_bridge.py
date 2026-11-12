@@ -1,4 +1,4 @@
-"""Let Daim talk on Gemini, so everyday conversation costs no Claude tokens.
+"""Let Cuba talk on Gemini, so everyday conversation costs no Claude tokens.
 
 Speaks the same interface as ClaudeBridge (start, send, events, interrupt,
 new_session, close), so the team cannot tell the two apart. Coding work still
@@ -24,7 +24,7 @@ from server.session_store import SessionStore
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
 ONE_SHOT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MEMORY_DIR = ROOT / "asistan"
-MEMORY_FILES = ("gorevler.md", "takvim.md", "notlar.md")
+MEMORY_FILES = ("cagan.md", "gorevler.md", "takvim.md", "notlar.md")
 PROGRAMS = {
     "ekip": ROOT / "tools" / "ekip.py",
     "hatirlatma": ROOT / "tools" / "reminder.py",
@@ -40,7 +40,7 @@ ADAPTER = """
 # Bu oturumda araçlar
 Kabuğun yok; işleri şu fonksiyonlarla yap:
 - `komut(program, args)`: program "ekip", "hatirlatma" ya da "ofis". Ofis komutu için
-  komut(program="ofis", args=["git", "toplanti", "daim", "kidemli"]) gibi çağır. Yukarıda `{ekip} plan --gorev "..."` yazan yerde
+  komut(program="ofis", args=["git", "toplanti", "cuba", "kidemli"]) gibi çağır. Yukarıda `{ekip} plan --gorev "..."` yazan yerde
   komut(program="ekip", args=["plan", "--gorev", "..."]) çağır. Hatırlatma için `reminder.py add --at ... --text ...`
   yerine komut(program="hatirlatma", args=["add", "--at", "YYYY-MM-DD HH:MM", "--text", "metin"]).
 - `dosya_yaz(ad, icerik)`: gorevler.md, takvim.md ya da notlar.md dosyasının tamamını yazar.

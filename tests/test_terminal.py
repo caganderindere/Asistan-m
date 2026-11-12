@@ -190,7 +190,7 @@ def test_terminal_team_files(tmp_path):
 
     charter, plugin = write_terminal_team(tmp_path, DEFAULT_MODELS)
     text = charter.read_text(encoding="utf-8")
-    assert "Sen Daim'sin" in text and "`testci`" in text and "{{roster}}" not in text
+    assert "Sen Cuba'sın" in text and "`testci`" in text and "{{roster}}" not in text
     kidemli = (plugin / "agents" / "kidemli.md").read_text(encoding="utf-8")
     assert kidemli.startswith("---\nname: kidemli\n") and "model: opus" in kidemli
     assert "model: haiku" in (plugin / "agents" / "asistan.md").read_text(encoding="utf-8")
@@ -203,7 +203,7 @@ def test_team_member_sits_at_its_own_desk():
     from server.terminal import TerminalCrew
 
     crew = TerminalCrew(clock=lambda: 0)
-    crew.tool("Agent", {"description": "Testleri çalıştır", "subagent_type": "daim-ekip:testci"}, "t1")
+    crew.tool("Agent", {"description": "Testleri çalıştır", "subagent_type": "cuba-ekip:testci"}, "t1")
     testci = next(a for a in crew.snapshot()["agents"] if a["id"] == "testci")
     assert testci["state"] == "working" and testci["name"] == "Testçi"
 
@@ -227,7 +227,7 @@ def test_given_work_a_member_returns_to_the_desk(terminal_client):
     auth = {"x-ekip-token": TOKEN}
     terminal_client.post("/api/team/move", headers=auth, json={"who": ["testci"], "where": "sofa"})
     terminal_client.post("/api/team/terminal", headers=auth, json={
-        "kind": "pre", "tool": "Agent", "use_id": "t1", "input": {"subagent_type": "daim-ekip:testci"}})
+        "kind": "pre", "tool": "Agent", "use_id": "t1", "input": {"subagent_type": "cuba-ekip:testci"}})
     assert "testci" not in terminal_client.get("/api/team/places", headers=auth).json()["places"]
 
 
@@ -238,3 +238,22 @@ def test_project_summary_lists_team_papers(terminal_client, tmp_path):
     (papers / "2026-11-11-odeme.md").write_text("## İstek\nyeni", encoding="utf-8")
     docs = terminal_client.get("/api/project").json()["docs"]
     assert [d["name"] for d in docs] == ["2026-11-11-odeme", "2026-11-10-giris"]
+
+
+async def test_moving_to_another_project_closes_claude_and_restarts_there(tmp_path):
+    cwds, ptys = [], []
+
+    def spawn(argv, cwd, env, dimensions):
+        cwds.append(cwd)
+        ptys.append(FakePty())
+        return ptys[-1]
+
+    terminal = Terminal(["powershell.exe"], str(tmp_path / "a"), spawn=spawn)
+    terminal.start()
+    assert not terminal.move_to(str(tmp_path / "a" / "."))  # the same folder: nothing happens
+    assert terminal.alive
+    assert terminal.move_to(str(tmp_path / "b"))
+    assert not terminal.alive and terminal.cwd == str(tmp_path / "b")
+    terminal.start()
+    assert cwds == [str(tmp_path / "a"), str(tmp_path / "b")]
+    terminal.close()

@@ -1,8 +1,8 @@
-"""Daim's voice on the Gemini Live API: speech in, speech out, about half a second apart.
+"""Cuba's voice on the Gemini Live API: speech in, speech out, about half a second apart.
 
 The browser streams microphone audio here (16 kHz PCM) and plays what comes
 back (24 kHz PCM). This server holds the API key, carries both directions to
-Google, runs Daim's tools and hands real work to the terminal's Claude.
+Google, runs Cuba's tools and hands real work to the terminal's Claude.
 """
 
 from __future__ import annotations
@@ -36,8 +36,11 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "description": "Kod, proje ya da dosya işini terminaldeki ekibe (Claude Code) verir.",
         "parameters": {
             "type": "object",
-            "properties": {"talimat": {"type": "string", "description": "İşi eksiksiz anlatan tek paragraf."}},
-            "required": ["talimat"],
+            "properties": {
+                "proje": {"type": "string", "description": "İşin yapılacağı projenin adı, Projeler listesinden."},
+                "talimat": {"type": "string", "description": "İşi eksiksiz anlatan tek paragraf."},
+            },
+            "required": ["proje", "talimat"],
         },
     },
     {
@@ -52,14 +55,42 @@ LIVE_TOOLS = [{"functionDeclarations": [
 ]}]
 
 
-def live_prompt(memory_dir: Path = MEMORY_DIR, now: datetime.datetime | None = None) -> str:
+def project_block(listing: dict) -> str:
+    """The projects Cuba can hand work in, the open one marked."""
+    lines = [
+        f"- {p['name']}: {p['path']}" + (" (şu an açık)" if p["path"] == listing.get("current") else "")
+        for p in listing.get("projects", [])
+    ]
+    return "\n".join(lines) or "Henüz proje yok."
+
+
+def live_prompt(
+    memory_dir: Path = MEMORY_DIR, now: datetime.datetime | None = None, projects: dict | None = None
+) -> str:
     return (
         f"{PROMPT.read_text(encoding='utf-8')}\n{now_line(now or datetime.datetime.now())}\n\n"
+        f"# Projeler\n{project_block(projects or {})}\n\n"
         f"# Hafıza dosyaları\n{memory_block(memory_dir)}"
     )
 
 
-Hand = Callable[[str], Awaitable[None]]  # gives the terminal's Claude an instruction
+def find_project(listing: dict, wanted: str) -> str | None:
+    """The folder of the project Çağan named: by path, by exact name, or by the one name that contains it."""
+    wanted = wanted.strip().strip('"').casefold()
+    if not wanted:
+        return None
+    projects = listing.get("projects", [])
+    for project in projects:
+        if project["path"].casefold().rstrip("\\") == wanted.rstrip("\\"):
+            return project["path"]
+    exact = [p["path"] for p in projects if p["name"].casefold() == wanted]
+    if len(exact) == 1:
+        return exact[0]
+    close = [p["path"] for p in projects if wanted in p["name"].casefold()]
+    return close[0] if len(close) == 1 else None
+
+
+Hand = Callable[[str, str], Awaitable[None]]  # gives the terminal's Claude an instruction, in a project folder
 Keys = Callable[[str], None]  # presses keys in the terminal
 
 
@@ -76,6 +107,7 @@ class LiveHub:
         connect: Callable = websockets.connect,
         memory_dir: Path = MEMORY_DIR,
         runner: Callable = run_program,
+        projects: Callable[[], dict] = dict,
     ) -> None:
         self._key = api_key
         self._model = model
@@ -85,6 +117,7 @@ class LiveHub:
         self._connect = connect
         self._memory_dir = memory_dir
         self._runner = runner
+        self._projects = projects  # the project listing, as the browser gets it
         self._google = None  # the open Google session
         self._browser: WebSocket | None = None
         self._handle = ""  # lets a dropped session resume where it was
@@ -98,7 +131,7 @@ class LiveHub:
         return self._google is not None
 
     async def tell(self, text: str) -> None:
-        """Give Daim something to say: a team report, a permission prompt, a welcome back."""
+        """Give Cuba something to say: a team report, a permission prompt, a welcome back."""
         if self._google is not None:
             await self._google.send(json.dumps(
                 {"clientContent": {"turns": [{"role": "user", "parts": [{"text": text}]}], "turnComplete": True}},
@@ -147,7 +180,7 @@ class LiveHub:
                 "responseModalities": ["AUDIO"],
                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self._voice}}},
             },
-            "systemInstruction": {"parts": [{"text": live_prompt(self._memory_dir)}]},
+            "systemInstruction": {"parts": [{"text": live_prompt(self._memory_dir, projects=self._projects())}]},
             "tools": LIVE_TOOLS,
             "inputAudioTranscription": {},
             "outputAudioTranscription": {},
@@ -205,7 +238,7 @@ class LiveHub:
             if text := content.get("inputTranscription", {}).get("text"):
                 await self._event({"type": "user", "text": text})
             if text := content.get("outputTranscription", {}).get("text"):
-                await self._event({"type": "daim", "text": text})
+                await self._event({"type": "cuba", "text": text})
             if content.get("interrupted"):
                 await self._event({"type": "interrupted"})
             if content.get("turnComplete"):
@@ -228,12 +261,17 @@ class LiveHub:
                 (self._memory_dir / args["ad"]).write_text(str(args.get("icerik", "")), encoding="utf-8")
                 return {"ok": True}
             if name == "terminale_ver" and str(args.get("talimat", "")).strip():
-                await self._hand_over(str(args["talimat"]).strip())
-                return {"ok": True, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+                listing = self._projects()
+                folder = find_project(listing, str(args.get("proje", "")))
+                if folder is None:
+                    names = ", ".join(p["name"] for p in listing.get("projects", []))
+                    return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
+                await self._hand_over(str(args["talimat"]).strip(), folder)
+                return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
             if name == "terminal_tus" and args.get("tus") in TERMINAL_KEYS:
                 self._press(TERMINAL_KEYS[args["tus"]])
                 return {"ok": True}
-        except Exception as error:  # noqa: BLE001 - a failed tool is reported to Daim, not raised
+        except Exception as error:  # noqa: BLE001 - a failed tool is reported to Cuba, not raised
             logger.exception("live tool %s failed", name)
             return {"error": str(error)}
         return {"error": f"Bilinmeyen araç ya da eksik bilgi: {name}"}
@@ -251,7 +289,7 @@ class LiveHub:
 
 def _summary(name: str, args: dict) -> str:
     if name == "terminale_ver":
-        return str(args.get("talimat", ""))[:80]
+        return f"{args.get('proje', '')}: {args.get('talimat', '')}"[:80]
     if name == "komut":
         return " ".join([str(args.get("program", "")), *map(str, args.get("args", []))])[:80]
     return str(args.get("ad") or args.get("tus") or "")

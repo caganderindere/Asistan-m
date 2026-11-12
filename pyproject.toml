@@ -12,7 +12,7 @@ dependencies = [
     # faster-whisper passes metadata_errors to av.open(), which PyAV 19 removed.
     "av<19",
     "edge-tts",
-    # Daim talks to Gemini over its REST API.
+    # Cuba talks to Gemini over its REST API.
     "httpx",
     # The embedded terminal: a Windows pseudo-console.
     "pywinpty",

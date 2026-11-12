@@ -1,4 +1,4 @@
-// Talking to Daim over Gemini Live: microphone up as 16 kHz PCM, Daim's voice down as 24 kHz PCM.
+// Talking to Cuba over Gemini Live: microphone up as 16 kHz PCM, Cuba's voice down as 24 kHz PCM.
 
 const CHUNK = 640; // 40 ms of 16 kHz audio per message
 
@@ -20,12 +20,12 @@ class Capture extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor('daim-capture', Capture);
+registerProcessor('cuba-capture', Capture);
 `;
 
 /**
- * onEvent receives the server's events (ready, user, daim, tool, turn_complete, error, failed, closed);
- * onSpeaking(true|false) tells when Daim's voice starts and stops.
+ * onEvent receives the server's events (ready, user, cuba, tool, turn_complete, error, failed, closed);
+ * onSpeaking(true|false) tells when Cuba's voice starts and stops.
  */
 export function createLive({ onEvent, onSpeaking }) {
   let ws = null;
@@ -43,7 +43,7 @@ export function createLive({ onEvent, onSpeaking }) {
     const source = player.createBufferSource();
     source.buffer = audio;
     source.connect(player.destination);
-    // Chunks are laid end to end; a gap means Daim had paused, so start now.
+    // Chunks are laid end to end; a gap means Cuba had paused, so start now.
     nextAt = Math.max(nextAt, player.currentTime + 0.03);
     source.start(nextAt);
     nextAt += audio.duration;
@@ -55,7 +55,7 @@ export function createLive({ onEvent, onSpeaking }) {
     };
   }
 
-  /** The user talked over Daim: what was still queued is dropped at once. */
+  /** The user talked over Cuba: what was still queued is dropped at once. */
   function silence() {
     for (const source of playing) {
       source.onended = null;
@@ -72,7 +72,7 @@ export function createLive({ onEvent, onSpeaking }) {
     await context.audioWorklet.addModule(url);
     URL.revokeObjectURL(url);
     const source = context.createMediaStreamSource(stream);
-    const node = new AudioWorkletNode(context, 'daim-capture');
+    const node = new AudioWorkletNode(context, 'cuba-capture');
     node.port.onmessage = (e) => { if (ws?.readyState === WebSocket.OPEN) ws.send(e.data); };
     source.connect(node);
     mic = { context, source, node };

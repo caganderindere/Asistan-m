@@ -184,7 +184,7 @@ body[data-mode="terminal"] .roster { display: none; }
   border-radius: 8px;
   padding: 8px 12px;
 }
-.question::before { content: "Daim soruyor: "; font-weight: 600; }
+.question::before { content: "Cuba soruyor: "; font-weight: 600; }
 
 .agent-card {
   position: absolute;
@@ -304,7 +304,7 @@ body[data-mode="terminal"] .roster { display: none; }
 .paper { border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; margin-bottom: 6px; background: #fff; }
 .paper summary { cursor: pointer; font-size: 13px; font-weight: 600; }
 .history { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
-.history:empty::before { content: "Küreye dokunup konuşmaya başla. Daim seni dinler, işi ekibe dağıtır."; color: var(--muted); }
+.history:empty::before { content: "Küreye dokunup konuşmaya başla. Cuba seni dinler, işi ekibe dağıtır."; color: var(--muted); }
 .turn { overflow-wrap: anywhere; }
 .you { color: var(--muted); }
 .you::before { content: "Sen: "; font-weight: 600; }

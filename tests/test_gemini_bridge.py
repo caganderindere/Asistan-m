@@ -30,7 +30,7 @@ class FakeGemini:
 
 def make(tmp_path, fake, runner=None, key="k") -> GeminiBridge:
     prompt = tmp_path / "lider.md"
-    prompt.write_text("Sen Daim'sin.", encoding="utf-8")
+    prompt.write_text("Sen Cuba'sın.", encoding="utf-8")
     memory = tmp_path / "asistan"
     memory.mkdir()
     (memory / "gorevler.md").write_text("- [ ] süt al", encoding="utf-8")
@@ -59,7 +59,7 @@ async def test_streams_text_and_sends_memory_and_date(tmp_path):
     assert [e.text for e in events if isinstance(e, TextDelta)] == ["Günaydın ", "efendim."]
     assert events[-1] == TurnResult("", is_error=False)
     system = fake.bodies[0]["systemInstruction"]["parts"][0]["text"]
-    assert "Sen Daim'sin." in system and "süt al" in system and "2026-11-11 09:30 Çarşamba" in system
+    assert "Sen Cuba'sın." in system and "süt al" in system and "2026-11-11 09:30 Çarşamba" in system
     assert fake.bodies[0]["generationConfig"]["thinkingConfig"]["thinkingBudget"] == 0
     await bridge.close()
 

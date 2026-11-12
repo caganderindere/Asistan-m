@@ -51,12 +51,12 @@ let project = '';
 let selectedAgent = null;
 let liveMeeting = null; // the block showing a team meeting while it is going on
 let outputCount = null; // reports seen so far; null until the first list arrives
-let liveAvailable = false; // the server can carry Daim's voice over Gemini Live
-let away = false; // Daim decides in the user's place
-let hushed = false; // the user talked over Daim: the rest of this turn is not read out
-// Louder than ordinary speech detection, so Daim's own voice cannot interrupt it.
+let liveAvailable = false; // the server can carry Cuba's voice over Gemini Live
+let away = false; // Cuba decides in the user's place
+let hushed = false; // the user talked over Cuba: the rest of this turn is not read out
+// Louder than ordinary speech detection, so Cuba's own voice cannot interrupt it.
 const BARGE_IN_RMS = 0.03;
-let mode = 'office'; // office: speech goes to Daim on Gemini; terminal: to Claude Code
+let mode = 'office'; // office: speech goes to Cuba on Gemini; terminal: to Claude Code
 
 // Sentences are fetched as soon as they arrive and played strictly in order.
 const speechQueue = [];
@@ -383,7 +383,7 @@ function enqueueSpeech(text) {
   }).then((r) => (r.ok ? r.blob() : Promise.reject(new Error('tts'))));
   audio.catch(() => {}); // handled when its turn comes
   speechQueue.push(audio);
-  // Only the barge-in recorder may listen while Daim talks.
+  // Only the barge-in recorder may listen while Cuba talks.
   if (recording && !recording.bargeIn) cancelRecording();
   // One player only: a sentence arriving while the previous one is still
   // loading must wait its turn, or the two are heard on top of each other.
@@ -411,7 +411,7 @@ async function speakQueue(run) {
   continueIfIdle();
 }
 
-/** While Daim talks, listen for the user starting to speak: then Daim falls silent and listens. */
+/** While Cuba talks, listen for the user starting to speak: then Cuba falls silent and listens. */
 async function armBargeIn() {
   if (!handsFree || recording) return;
   let result;
@@ -526,7 +526,7 @@ async function ensureDetector() {
     onSpeechStart: () => {
       if (recording && !recording.bargeIn) recording.hear();
     },
-    // Talking over Daim needs real speech, not a click or Daim's own echo.
+    // Talking over Cuba needs real speech, not a click or Cuba's own echo.
     onSpeechRealStart: () => {
       if (recording?.bargeIn) recording.hear();
     },
@@ -649,7 +649,7 @@ async function listen() {
   await handleUtterance(result);
 }
 
-/** Pass on what the user said: to Claude Code in the terminal, otherwise to Daim. */
+/** Pass on what the user said: to Claude Code in the terminal, otherwise to Cuba. */
 async function handleUtterance(result) {
   if (!result || !handsFree) return;
   if (!result.meaningful) { setState('listening'); listen(); return; }
@@ -689,7 +689,7 @@ function continueIfIdle() {
 
 // ── Controls ────────────────────────────────────────────────
 
-// ── Gemini Live: Daim hears and answers in about half a second ──
+// ── Gemini Live: Cuba hears and answers in about half a second ──
 
 const live = createLive({
   onSpeaking: (on) => { if (live.active) setState(on ? 'speaking' : 'listening'); },
@@ -709,7 +709,7 @@ const live = createLive({
         scrollHistory();
         break;
       }
-      case 'daim':
+      case 'cuba':
         (currentTurn ??= addTurn('')).reply.textContent += event.text;
         scrollHistory();
         break;
@@ -740,7 +740,7 @@ const live = createLive({
 
 async function startLive() {
   handsFree = true;
-  setState('working', 'Daim bağlanıyor…');
+  setState('working', 'Cuba bağlanıyor…');
   try {
     await live.start(await ensureMic());
   } catch {
@@ -816,7 +816,7 @@ function showMode(next) {
   $('tabTerminal').setAttribute('aria-selected', String(next === 'terminal'));
   $('officeWrap').hidden = next !== 'office';
   $('terminalMode').hidden = next !== 'terminal';
-  $('sayText').placeholder = next === 'terminal' ? "Ya da Claude Code'a yaz" : "Ya da Daim'e yaz";
+  $('sayText').placeholder = next === 'terminal' ? "Ya da Claude Code'a yaz" : "Ya da Cuba'ya yaz";
   if (next === 'terminal') showSubTab(subTab);
 }
 
@@ -850,7 +850,7 @@ function showOutputs(items) {
     const head = document.createElement('p');
     head.className = 'output-head';
     head.append(Object.assign(document.createElement('time'), { textContent: item.time }));
-    const tag = item.away ? (item.done ? 'Daim bitirdi' : 'Daim karar verdi') : 'Rapor';
+    const tag = item.away ? (item.done ? 'Cuba bitirdi' : 'Cuba karar verdi') : 'Rapor';
     head.append(Object.assign(document.createElement('span'), { className: 'chip', textContent: tag }));
     li.append(head, Object.assign(document.createElement('p'), { textContent: item.summary }));
     if (item.report) {

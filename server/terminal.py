@@ -48,9 +48,9 @@ def hook_settings(
 
     settings = {
         "hooks": {
-            # Long enough for Daim to think over the answer while the user is away.
+            # Long enough for Cuba to think over the answer while the user is away.
             "Stop": hook("stop", timeout=90),
-            # Tells the terminal's Claude it is Daim, who its team is and whose orders count.
+            # Tells the terminal's Claude it is Cuba, who its team is and whose orders count.
             **({"SessionStart": hook(f'session_start "{charter}"')} if charter else {}),
             "PermissionRequest": hook("permission_request", "*"),
             "Notification": hook("permission", "permission_prompt"),
@@ -120,6 +120,18 @@ class Terminal:
     def alive(self) -> bool:
         return self._proc is not None and self._proc.isalive()
 
+    @property
+    def cwd(self) -> str:
+        return self._cwd
+
+    def move_to(self, cwd: str) -> bool:
+        """Work in *cwd* from now on; a Claude running elsewhere is closed. True if the folder changed."""
+        if os.path.normcase(os.path.normpath(cwd)) == os.path.normcase(os.path.normpath(self._cwd)):
+            return False
+        self.close()
+        self._cwd = cwd
+        return True
+
     def start(self, cols: int = 120, rows: int = 30) -> None:
         if self.alive:
             return
@@ -131,6 +143,8 @@ class Terminal:
         self._loop = asyncio.get_running_loop()
         self._scrollback.clear()
         self._size = 0
+        for queue in self._listeners:
+            queue.put_nowait("\x1bc")  # open screens start over too
         self._proc = spawn(self._argv, cwd=self._cwd, env=child_env(os.environ), dimensions=(rows, cols))
         threading.Thread(target=self._read, args=(self._proc,), daemon=True).start()
 
@@ -167,7 +181,7 @@ class Terminal:
             if data and self._loop is not None:
                 self._loop.call_soon_threadsafe(self._publish, data)
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._publish, "\r\n[Terminal kapandı. Yeniden açmak için sayfayı yenileyin.]\r\n")
+            self._loop.call_soon_threadsafe(self._publish, "\r\n[Terminal kapandı; gerektiğinde yeniden açılır.]\r\n")
 
     def _publish(self, data: str) -> None:
         self._scrollback.append(data)

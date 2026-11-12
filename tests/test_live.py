@@ -2,7 +2,7 @@ import asyncio
 import base64
 import json
 
-from server.live import LiveHub, live_prompt
+from server.live import LiveHub, find_project, live_prompt
 
 
 class FakeGoogle:
@@ -56,14 +56,21 @@ class FakeBrowser:
         self.incoming.put_nowait({"type": "websocket.disconnect"})
 
 
+PROJECTS = {"current": r"D:\ClaudeSes", "projects": [
+    {"name": "ClaudeSes", "path": r"D:\ClaudeSes"},
+    {"name": "balbalmedya", "path": r"D:\web\balbalmedya"},
+    {"name": "balbal-eski", "path": r"D:\web\balbal-eski"},
+]}
+
+
 def make_hub(google, **kwargs):
     handed, pressed = [], []
 
-    async def hand_over(text):
-        handed.append(text)
+    async def hand_over(text, folder):
+        handed.append((folder, text))
 
     hub = LiveHub("key", "gemini-live-test", "Charon", hand_over, pressed.append,
-                  connect=lambda url, **kw: google, **kwargs)
+                  connect=lambda url, **kw: google, projects=lambda: PROJECTS, **kwargs)
     hub.handed, hub.pressed = handed, pressed
     return hub
 
@@ -76,7 +83,7 @@ async def wait_for(condition, timeout=2.0):
     raise AssertionError("condition never held")
 
 
-async def test_setup_carries_daim_voice_tools_and_prompt(tmp_path):
+async def test_setup_carries_cuba_voice_tools_and_prompt(tmp_path):
     google = FakeGoogle([])
     hub = make_hub(google, memory_dir=tmp_path)
     browser = FakeBrowser()
@@ -87,7 +94,7 @@ async def test_setup_carries_daim_voice_tools_and_prompt(tmp_path):
     assert setup["generationConfig"]["speechConfig"]["voiceConfig"]["prebuiltVoiceConfig"]["voiceName"] == "Charon"
     names = [f["name"] for f in setup["tools"][0]["functionDeclarations"]]
     assert {"komut", "dosya_yaz", "terminale_ver", "terminal_tus"} <= set(names)
-    assert "Sen Daim'sin" in setup["systemInstruction"]["parts"][0]["text"]
+    assert "Sen Cuba'sın" in setup["systemInstruction"]["parts"][0]["text"]
     assert hub.active
     browser.leave()
     await asyncio.wait_for(serving, 2)
@@ -111,7 +118,7 @@ async def test_audio_and_words_flow_both_ways(tmp_path):
     await wait_for(lambda: {"type": "turn_complete"} in browser.events and len(google.sent) >= 3)
     assert browser.audio == [pcm]
     assert {"type": "user", "text": "Merhaba"} in browser.events
-    assert {"type": "daim", "text": "Buyurun efendim."} in browser.events
+    assert {"type": "cuba", "text": "Buyurun efendim."} in browser.events
     assert google.sent[1]["realtimeInput"]["audio"] == {"data": base64.b64encode(b"\x10\x00").decode(),
                                                       "mimeType": "audio/pcm;rate=16000"}
     assert google.sent[2] == {"realtimeInput": {"text": "Saat kaç?"}}
@@ -121,26 +128,29 @@ async def test_audio_and_words_flow_both_ways(tmp_path):
 
 async def test_work_goes_to_the_terminal_and_tools_answer(tmp_path):
     google = FakeGoogle([{"toolCall": {"functionCalls": [
-        {"id": "1", "name": "terminale_ver", "args": {"talimat": "Giriş sayfasını yap."}},
+        {"id": "1", "name": "terminale_ver", "args": {"proje": "BalBalMedya", "talimat": "Giriş sayfasını yap."}},
         {"id": "2", "name": "terminal_tus", "args": {"tus": "evet"}},
         {"id": "3", "name": "dosya_yaz", "args": {"ad": "notlar.md", "icerik": "kahve sade"}},
         {"id": "4", "name": "dosya_yaz", "args": {"ad": "../x.md", "icerik": "x"}},
+        {"id": "5", "name": "terminale_ver", "args": {"proje": "balbal", "talimat": "Hangisi?"}},
     ]}}])
     hub = make_hub(google, memory_dir=tmp_path)
     browser = FakeBrowser()
     serving = asyncio.create_task(hub.serve(browser))
     await wait_for(lambda: any("toolResponse" in m for m in google.sent))
     replies = next(m for m in google.sent if "toolResponse" in m)["toolResponse"]["functionResponses"]
-    assert [r["id"] for r in replies] == ["1", "2", "3", "4"]
+    assert [r["id"] for r in replies] == ["1", "2", "3", "4", "5"]
     assert replies[0]["response"]["ok"] and "error" in replies[3]["response"]
-    assert hub.handed == ["Giriş sayfasını yap."] and hub.pressed == ["\r"]
+    # Two projects answer to "balbal": Cuba is told to ask, nothing is handed over.
+    assert "Çağan'a sor" in replies[4]["response"]["error"]
+    assert hub.handed == [(r"D:\web\balbalmedya", "Giriş sayfasını yap.")] and hub.pressed == ["\r"]
     assert (tmp_path / "notlar.md").read_text(encoding="utf-8") == "kahve sade"
     assert any(e["type"] == "tool" and e["name"] == "terminale_ver" for e in browser.events)
     browser.leave()
     await asyncio.wait_for(serving, 2)
 
 
-async def test_team_report_is_told_to_daim(tmp_path):
+async def test_team_report_is_told_to_cuba(tmp_path):
     google = FakeGoogle([])
     hub = make_hub(google, memory_dir=tmp_path)
     browser = FakeBrowser()
@@ -170,3 +180,15 @@ def test_prompt_has_memory_and_date(tmp_path):
     (tmp_path / "takvim.md").write_text("## 2026-11-11\n10:00 — diş", encoding="utf-8")
     text = live_prompt(tmp_path)
     assert "10:00 — diş" in text and "Şu an:" in text and "terminale_ver" in text
+
+
+def test_prompt_lists_projects_with_the_open_one_marked(tmp_path):
+    text = live_prompt(tmp_path, projects=PROJECTS)
+    assert "- ClaudeSes: D:\\ClaudeSes (şu an açık)" in text and "- balbalmedya: D:\\web\\balbalmedya\n" in text
+
+
+def test_projects_are_found_by_path_name_or_the_one_name_containing_it():
+    assert find_project(PROJECTS, "d:\\web\\balbalmedya\\") == r"D:\web\balbalmedya"
+    assert find_project(PROJECTS, "claudeses") == r"D:\ClaudeSes"
+    assert find_project(PROJECTS, "eski") == r"D:\web\balbal-eski"
+    assert find_project(PROJECTS, "balbal") is None and find_project(PROJECTS, "") is None

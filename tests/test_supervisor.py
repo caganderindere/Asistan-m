@@ -27,7 +27,7 @@ async def test_summary_falls_back_without_gemini(tmp_path):
     assert (await boss.on_stop("Kurdum. Testler geçti."))["speak"] == "Kurdum. Testler geçti."
 
 
-async def test_away_daim_answers_claude_in_the_users_place(tmp_path):
+async def test_away_cuba_answers_claude_in_the_users_place(tmp_path):
     ask = fake_ask(json.dumps({"bitti": False, "talimat": "A seçeneğiyle devam et.", "ozet": "Ekip A'yı seçti."}))
     boss = Supervisor(ask, tmp_path / "out.json")
     boss.note_prompt("Giriş sayfasını yap")

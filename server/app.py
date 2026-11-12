@@ -28,7 +28,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from server.claude_events import TextDelta, ToolUse, TurnResult
 from server.config import ROOT, Config
 from server.gemini_bridge import MissingKey
-from server.projects import ProjectList
+from server.projects import ProjectList, project_name
 from server.sentences import SentenceSplitter
 from server.stt import is_meaningful
 from server.team import LeadTurn, MeetingEnded, Team, TeamError
@@ -51,7 +51,7 @@ Synth = Callable[[str, str], Awaitable[bytes]]
 
 
 def greeting(hour: int) -> str:
-    """What Daim says when the user starts talking and the day's briefing is already done."""
+    """What Cuba says when the user starts talking and the day's briefing is already done."""
     if hour < 5 or hour >= 22:
         return "Geç saatte de buradayım efendim, dinliyorum."
     if hour < 12:
@@ -290,7 +290,7 @@ def create_app(
         """What the terminal's Claude is doing; a finished answer or a permission prompt is said aloud."""
         kind = body.get("kind")
         if kind == "permission_request":
-            # Away, Daim says yes in the user's place; present, Claude asks as usual.
+            # Away, Cuba says yes in the user's place; present, Claude asks as usual.
             return {"behavior": "allow"} if boss.away else {}
         if kind == "prompt":
             boss.note_prompt(str(body.get("text", "")))
@@ -311,7 +311,7 @@ def create_app(
         answer: dict = {}
         live_on = live is not None and live.active and not boss.away
         if kind == "stop" and live_on:
-            # Daim, on the line, passes the report on in his own words.
+            # Cuba, on the line, passes the report on in his own words.
             report = str(body.get("text", ""))
             boss.note_report(report)
             crew.stop()
@@ -360,6 +360,8 @@ def create_app(
             return
         projects.select(path)
         await team.open(path)
+        if terminal is not None:
+            terminal.move_to(path)  # Claude restarts in the new folder when next needed
         await clients.send(projects.listing(), ws)
         await clients.send({"type": "chat", "turns": team.chat}, ws)
 
@@ -591,9 +593,9 @@ def main(argv: list[str] | None = None) -> None:
     from server.prompts import write_terminal_team
 
     charter, plugin = write_terminal_team(data_dir / "terminal", config.models)
-    from server.prompts import ofis_command
+    from server.prompts import INSTALLERS, ofis_command
 
-    settings = hook_settings(sys.executable, data_dir / "terminal", charter, allow=(ofis_command(),))
+    settings = hook_settings(sys.executable, data_dir / "terminal", charter, allow=(ofis_command(), *INSTALLERS))
     terminal = Terminal(
         powershell_command(claude_exe, settings, config.terminal_model, plugin), projects.current
     )
@@ -605,11 +607,20 @@ def main(argv: list[str] | None = None) -> None:
 
     supervisor = Supervisor(ask if gemini_key else None, data_dir / "terminal" / "outputs.json")
 
-    async def hand_over(instruction: str) -> None:
-        """Type Daim's instruction into the terminal's Claude, as if Çağan had."""
+    async def hand_over(instruction: str, folder: str) -> None:
+        """Type Cuba's instruction into the terminal's Claude, as if Çağan had, in the project's own folder."""
+        if folder != projects.current:
+            projects.select(folder)
+            await team.open(folder)
+        terminal.move_to(folder)  # a fresh Claude there reads that project's CLAUDE.md and memory
         if not terminal.alive:
             terminal.start()
             await asyncio.sleep(8)  # Claude Code takes a moment before it reads its prompt
+        # One line: a newline would send the instruction before it is all typed.
+        instruction = (
+            f"[Proje: {project_name(folder)} - {folder}. Çalışma klasörün bu değilse hiçbir şeyi "
+            f"değiştirme, dur ve sor.] {' '.join(instruction.split())}"
+        )
         supervisor.note_prompt(instruction)
         terminal.write(instruction)
         await asyncio.sleep(0.2)  # text and Enter together would land as a paste
@@ -617,7 +628,9 @@ def main(argv: list[str] | None = None) -> None:
 
     live = None
     if config.voice_engine == "live" and gemini_key:
-        live = LiveHub(gemini_key, config.live_model, config.live_voice, hand_over, terminal.write)
+        live = LiveHub(
+            gemini_key, config.live_model, config.live_voice, hand_over, terminal.write, projects=projects.listing
+        )
     app = create_app(
         config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminal=terminal,
         supervisor=supervisor, live=live,

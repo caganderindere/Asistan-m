@@ -1,8 +1,8 @@
-"""Daim as the boss of the terminal's Claude: brief reports, and decisions while you are away.
+"""Cuba as the boss of the terminal's Claude: brief reports, and decisions while you are away.
 
 Claude Code works in the terminal; each time it stops, its answer comes here.
-With the user present, Daim turns it into a sentence or two to say aloud.
-With the user away, Daim decides in their place: the work is done, or Claude
+With the user present, Cuba turns it into a sentence or two to say aloud.
+With the user away, Cuba decides in their place: the work is done, or Claude
 gets told what to do next, up to a fixed number of rounds.
 """
 
@@ -23,8 +23,8 @@ KEPT_OUTPUTS = 100
 # Only the end of a long answer is sent to Gemini: the conclusion is there.
 REPORT_CHARS = 6000
 
-SUMMARY_PROMPT = """Aşağıdaki metni Daim (sen) az önce Çağan'a yazdın; ekranda duruyor. Şimdi aynısını
-sesli söyleyeceksin, ama kısaca: bir iki konuşma cümlesi, birinci tekil şahısla, Daim'in ağzından.
+SUMMARY_PROMPT = """Aşağıdaki metni Cuba (sen) az önce Çağan'a yazdın; ekranda duruyor. Şimdi aynısını
+sesli söyleyeceksin, ama kısaca: bir iki konuşma cümlesi, birinci tekil şahısla, Cuba'nın ağzından.
 Kurallar:
 - Yalnızca metinde gerçekten yazanı söyle. Metinde olmayan hiçbir şeyi ekleme: test, hata, onay,
   soru ya da rapor metinde yoksa bunlardan söz etme.
@@ -33,11 +33,11 @@ Kurallar:
 - Metin rapor değilse (kısa bir cevap, yapılan küçük bir iş) onu kısaca olduğu gibi söyle.
 - Çağan'a "efendim" de; "boss" ya da "patron" deme. Madde işareti, kod ve dosya yolu okuma.
 Yalnızca söyleyeceğin metni yaz."""
-# Answers this short are Daim's own words, read as written: nothing to summarize.
+# Answers this short are Cuba's own words, read as written: nothing to summarize.
 BRIEF_CHARS = 350
 BRIEF_LINES = 4
 
-AWAY_PROMPT = """Sen Daim'sin: Çağan'ın takım liderisin. Çağan şu an yok (uyuyor ya da dışarıda) ve tüm
+AWAY_PROMPT = """Sen Cuba'sın: Çağan'ın takım liderisin. Çağan şu an yok (uyuyor ya da dışarıda) ve tüm
 yetkiyi sana verdi; hiçbir şeyi ona sorma, onun yerine sen karar ver. Geliştirici ekip (Claude Code)
 az önce durdu ve aşağıdaki raporu verdi.
 
@@ -52,7 +52,7 @@ Karar ver:
 
 Yalnızca şu JSON'u döndür: {{"bitti": true/false, "talimat": "...", "ozet": "..."}}"""
 
-DIGEST_PROMPT = """Sen Daim'sin: Çağan'ın takım liderisin. Çağan yokken ekibi sen yönettin; aşağıda o sürede
+DIGEST_PROMPT = """Sen Cuba'sın: Çağan'ın takım liderisin. Çağan yokken ekibi sen yönettin; aşağıda o sürede
 olanların kısa notları var. Çağan döndü: ona "hoş geldiniz efendim" diye başlayıp olanları üç dört
 cümleyle sesli anlat. Ne bitti, hangi kararları sen verdin, yarım kalan ya da dikkat etmesi gereken
 ne var. Madde işareti kullanma. Yalnızca söyleyeceğin metni yaz."""
@@ -110,7 +110,7 @@ class Supervisor:
         return "Hoş geldiniz efendim. " + " ".join(o["summary"] for o in notes)
 
     def note_prompt(self, text: str) -> None:
-        """Whatever the user asks Claude for is the goal Daim holds it to."""
+        """Whatever the user asks Claude for is the goal Cuba holds it to."""
         if text.strip():
             self.goal = text.strip()
             self.turns = 0
@@ -137,7 +137,7 @@ class Supervisor:
         return {"continue_with": decision["talimat"]}
 
     def note_report(self, report: str) -> None:
-        """Keep a report Daim relays live; the outputs list shows its opening."""
+        """Keep a report Cuba relays live; the outputs list shows its opening."""
         if not is_brief(report):
             self._record(spoken(report), report, away=False)
 

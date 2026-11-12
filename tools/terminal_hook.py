@@ -1,11 +1,11 @@
 """Claude Code hook for the embedded terminal: hand the answer to the voice.
 
-`session_start <file>`: prints the charter that makes the terminal's Claude act as Daim.
+`session_start <file>`: prints the charter that makes the terminal's Claude act as Cuba.
 `stop`: posts Claude's last reply so it is read aloud.
 `permission`: posts that Claude is waiting for approval.
 `prompt`, `pre`, `post`: post what Claude and its subagents are doing, for the office.
-`permission_request`: while the user is away, Daim grants it.
-With the user away, `stop` may come back with Daim's next instruction, which keeps Claude going.
+`permission_request`: while the user is away, Cuba grants it.
+With the user away, `stop` may come back with Cuba's next instruction, which keeps Claude going.
 Never fails Claude: any problem is ignored and the hook exits 0.
 """
 

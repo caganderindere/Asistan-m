@@ -1,10 +1,10 @@
 """Move people around the office: the office is physical, everyone walks.
 
-    ofis.py git <yer> <kim> [<kim> ...]   e.g. ofis.py git toplanti daim kidemli
+    ofis.py git <yer> <kim> [<kim> ...]   e.g. ofis.py git toplanti cuba kidemli
     ofis.py nerede                       who has been sent where
 
-Places: masa, toplanti, mutfak, dinlenme, yonetim (Daim's room), serbest (back to their own routine).
-People: daim, kidemli, gelistirici, testci, asistan, cagan (or "herkes").
+Places: masa, toplanti, mutfak, dinlenme, yonetim (Cuba's room), serbest (back to their own routine).
+People: cuba, kidemli, gelistirici, testci, asistan, cagan (or "herkes").
 Exit codes as in ekip.py: 0 done, 2 refused, 3 server unreachable.
 """
 
@@ -16,7 +16,7 @@ import sys
 from ekip import call
 
 PEOPLE = {
-    "daim": "lider", "lider": "lider", "kidemli": "kidemli", "kıdemli": "kidemli",
+    "cuba": "lider", "lider": "lider", "kidemli": "kidemli", "kıdemli": "kidemli",
     "gelistirici": "gelistirici", "geliştirici": "gelistirici", "testci": "testci", "testçi": "testci",
     "asistan": "asistan", "cagan": "cagan", "çağan": "cagan", "ben": "cagan",
 }
@@ -26,7 +26,7 @@ PLACES = {
     "mutfak": "coffee", "dinlenme": "sofa", "yonetim": "visit", "yönetim": "visit", "serbest": "",
 }
 SPOKEN = {"desk": "masasına", "meeting": "toplantı odasına", "coffee": "mutfağa", "sofa": "dinlenme alanına",
-          "visit": "Daim'in odasına", "": "kendi düzenine"}
+          "visit": "Cuba'nın odasına", "": "kendi düzenine"}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> None:
         elif name in PEOPLE:
             who.append(PEOPLE[name])
         else:
-            print(f"Bilinmeyen kişi: {name}. Kişiler: daim, kidemli, gelistirici, testci, asistan, cagan")
+            print(f"Bilinmeyen kişi: {name}. Kişiler: cuba, kidemli, gelistirici, testci, asistan, cagan")
             sys.exit(2)
     call("move", {"who": who, "where": where})
     print(f"{', '.join(dict.fromkeys(args.kim))} {SPOKEN[where]} gidiyor.")

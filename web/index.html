@@ -16,11 +16,11 @@
   <header class="topbar">
     <div class="brand">
       <span class="mark" aria-hidden="true"></span>
-      <div><strong>Daim</strong><small id="workdir"></small></div>
+      <div><strong>Cuba</strong><small id="workdir"></small></div>
     </div>
     <div class="modes" role="tablist" aria-label="Çalışma biçimi">
       <button type="button" role="tab" id="tabOffice" aria-selected="true">
-        <b>Sohbet</b><small>Daim · Gemini</small>
+        <b>Sohbet</b><small>Cuba · Gemini</small>
       </button>
       <button type="button" role="tab" id="tabTerminal" aria-selected="false">
         <b>Terminal</b><small>Claude Code</small>
@@ -28,11 +28,11 @@
     </div>
     <div class="top-actions">
       <button class="away" id="awayToggle" type="button" aria-pressed="false"
-              title="Açıkken Daim senin yerine karar verir ve işi bitirir; kapatınca olanları anlatır.">
+              title="Açıkken Cuba senin yerine karar verir ve işi bitirir; kapatınca olanları anlatır.">
         <i aria-hidden="true"></i><span>Uzaktayım</span>
       </button>
       <span class="conn" id="conn" data-state="connecting">Bağlanıyor…</span>
-      <button class="ghost" id="newSession" type="button" title="Daim ile konuşmayı sıfırla">Yeni konuşma</button>
+      <button class="ghost" id="newSession" type="button" title="Cuba ile konuşmayı sıfırla">Yeni konuşma</button>
     </div>
   </header>
 
@@ -75,7 +75,7 @@
 
     <ul class="roster" id="roster" aria-label="Ekip"></ul>
 
-    <section class="voice" aria-label="Daim ile konuş">
+    <section class="voice" aria-label="Cuba ile konuş">
       <button class="orb" id="orb" type="button" data-state="idle" aria-label="Sesli konuşmayı başlat">
         <span class="orb-core"></span>
       </button>
@@ -85,7 +85,7 @@
         <p class="notice" id="notice" hidden></p>
       </div>
       <form class="say" id="sayForm">
-        <input id="sayText" type="text" placeholder="Ya da Daim'e yaz" autocomplete="off" aria-label="Daim'e yaz">
+        <input id="sayText" type="text" placeholder="Ya da Cuba'ya yaz" autocomplete="off" aria-label="Cuba'ya yaz">
         <button type="submit">Gönder</button>
       </form>
       <button class="stop" id="stop" type="button">Dur <kbd>Esc</kbd></button>
@@ -104,14 +104,14 @@
     </section>
     <section class="panel" data-pane="outputs" hidden>
       <ol class="outputs" id="outputs"></ol>
-      <p class="empty" id="outputsEmpty">Terminaldeki ekip bir işi bitirdiğinde Daim'in özeti ve tam rapor burada birikir.</p>
+      <p class="empty" id="outputsEmpty">Terminaldeki ekip bir işi bitirdiğinde Cuba'nın özeti ve tam rapor burada birikir.</p>
     </section>
     <section class="panel" data-pane="project" hidden>
       <div class="project-info" id="projectInfo"></div>
     </section>
     <section class="panel" data-pane="tasks" hidden>
       <ol id="tasks"></ol>
-      <p class="empty" id="tasksEmpty">Henüz görev yok. Daim'e ne yapılacağını söyle; planı sana okuyup onayını ister.</p>
+      <p class="empty" id="tasksEmpty">Henüz görev yok. Cuba'ya ne yapılacağını söyle; planı sana okuyup onayını ister.</p>
     </section>
   </aside>
 

@@ -26,7 +26,7 @@ function windowColor(hour = new Date().getHours()) {
 }
 
 const PEOPLE = {
-  lider:       { short: 'Daim',      color: '#C8860B', hair: '#2B211B', desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
+  lider:       { short: 'Cuba',      color: '#C8860B', hair: '#2B211B', desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
   kidemli:     { short: 'Kıdemli',     color: '#A23B72', hair: '#4A3426', desk: [145, 516], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
   gelistirici: { short: 'Geliştirici', color: '#2B6CD4', hair: '#1F1B18', desk: [375, 516], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
   testci:      { short: 'Testçi',      color: '#2D8F5B', hair: '#6B4A2E', desk: [810, 162], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
@@ -279,7 +279,7 @@ function shorten(text, max = 30) {
 function describe(agent, spot, snapshot) {
   if (snapshot.places?.[agent.id]) {
     return { desk: 'Masasında', meeting: 'Toplantı odasında', coffee: 'Mutfakta', sofa: 'Dinlenme alanında',
-      visit: "Daim'in odasında" }[spot] ?? '';
+      visit: "Cuba'nın odasında" }[spot] ?? '';
   }
   if (spot === 'meeting') {
     if (snapshot.phase !== 'review') return 'Toplantıda, plan için onayını bekliyor';
@@ -328,7 +328,7 @@ export function createOffice(canvas, onSelect) {
     if (agent.id === 'lider' && snapshot.question) return 'desk';
     const idle = agent.seconds + (Date.now() - seenAt) / 1000;
     if (idle >= COFFEE_BREAK_S) return 'sofa';
-    // Daim has just spoken to you and is waiting for your answer, not on a break.
+    // Cuba has just spoken to you and is waiting for your answer, not on a break.
     return agent.id === 'lider' ? 'desk' : 'coffee';
   }
 
@@ -628,7 +628,7 @@ export function createOffice(canvas, onSelect) {
     ctx.textAlign = 'center';
   }
 
-  /** A wall clock in Daim's room, telling the real time. */
+  /** A wall clock in Cuba's room, telling the real time. */
   function drawClock(onScreen) {
     const [x, y] = onScreen(iso(282, 22, 92));
     const r = Math.max(7, 13 * scale * 1.4);
