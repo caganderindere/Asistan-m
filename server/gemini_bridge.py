@@ -20,6 +20,7 @@ import httpx
 from server.claude_events import Event, TextDelta, ToolUse, TurnResult
 from server.config import ROOT
 from server.session_store import SessionStore
+from server.usage import GEMINI
 
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
 ONE_SHOT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -132,6 +133,7 @@ async def ask_gemini(
     async with httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(60, connect=10)) as client:
         response = await client.post(ONE_SHOT.format(model=model), json=body, headers={"x-goog-api-key": api_key})
     response.raise_for_status()
+    GEMINI.add(response.json().get("usageMetadata"))
     parts = response.json()["candidates"][0]["content"].get("parts", [])
     return "".join(p.get("text", "") for p in parts if not p.get("thought"))
 
@@ -244,6 +246,7 @@ class GeminiBridge:
         if self._thinking_budget is not None:
             body["generationConfig"] = {"thinkingConfig": {"thinkingBudget": self._thinking_budget}}
         parts: list[dict] = []
+        usage = None  # each chunk repeats the running total; the last one counts
         async with self._client.stream(
             "POST", API.format(model=self._model), json=body, headers={"x-goog-api-key": self._api_key},
         ) as response:
@@ -253,11 +256,13 @@ class GeminiBridge:
                 if not line.startswith("data:"):
                     continue
                 chunk = json.loads(line[5:])
+                usage = chunk.get("usageMetadata") or usage
                 for candidate in chunk.get("candidates", [])[:1]:
                     for part in candidate.get("content", {}).get("parts", []):
                         if part.get("text") and not part.get("thought"):
                             self._queue.put_nowait(TextDelta(part["text"]))
                         parts.append(part)
+        GEMINI.add(usage)
         return _merge_text(parts) or [{"text": ""}]
 
     async def _call(self, call: dict) -> dict:

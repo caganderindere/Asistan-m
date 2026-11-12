@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import contextlib
 import datetime
+import json
 import logging
 import os
 import secrets
@@ -32,9 +33,15 @@ from server.projects import ProjectList, project_name
 from server.sentences import SentenceSplitter
 from server.stt import is_meaningful
 from server.team import LeadTurn, MeetingEnded, Team, TeamError
+from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES
 from server.live import LiveHub
+from server.meeting import hold_meeting
+from server.memory import ConversationLog, Diary, ensure_profile
 from server.supervisor import Supervisor
-from server.terminal import AGENT_TOOLS, PERMISSION_LINE, Terminal, TerminalCrew
+from server.terminal import (
+    AGENT_TOOLS, LEAD_DESK, PERMISSION_LINE, ROLE_NAMES, Terminal, TerminalCrew, TerminalPool, folder_key,
+)
+from server.usage import GEMINI, ClaudeMeter
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +50,13 @@ BRIEFING_PROMPT = "Günün planını kısaca özetle."
 OFFICE_PLACES = {"desk", "meeting", "coffee", "sofa", "visit", ""}
 OFFICE_PEOPLE = {"lider", "kidemli", "gelistirici", "testci", "asistan", "cagan"}
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
+USAGE_EVERY_S = 30
+DIARY_EVERY_S = 600
+MEETING_PACE_S = 3.5  # a line of the meeting every few seconds, so it can be followed
+DUTIES = {
+    "kidemli": "zor mimari ve kritik kod", "gelistirici": "kodu yazar", "testci": "test eder ve doğrular",
+    "asistan": "belge, araştırma ve küçük işler",
+}
 CLAUDE_MISSING = (
     "Claude Code bulunamadı ya da giriş yapılmamış. Bir terminalde 'claude' yazıp giriş yapın."
 )
@@ -90,17 +104,42 @@ def create_app(
     terminal: Terminal | None = None,
     supervisor: Supervisor | None = None,
     live: LiveHub | None = None,
+    terminals: TerminalPool | None = None,
+    ask=None,
+    telegram=None,
+    remote_hosts: tuple[str, ...] = (),
+    memory_dir: Path = MEMORY_DIR,
+    claude_meter: ClaudeMeter | None = None,
 ) -> FastAPI:
     clients = _Clients()
-    crew = TerminalCrew()
+    if terminals is None and terminal is not None:
+        terminals = TerminalPool(lambda cwd: terminal)  # one terminal, whatever the project
+    crews: dict[str, TerminalCrew] = {}  # one office crew per project terminal
     boss = supervisor or Supervisor(None, data_dir / "terminal" / "outputs.json")
     places: dict[str, str] = {}  # who was sent where; the rest follow their own routine
+    talk = ConversationLog(data_dir / "konusmalar")
+    diary = Diary(memory_dir, talk, ask)
+    meter = claude_meter or ClaudeMeter()
+    terminal_sockets: set[WebSocket] = set()
+    asking: list[str] = terminals.asking if terminals is not None else []  # terminals waiting for a yes
 
     def team_view() -> dict:
         return {**team.snapshot(), "places": places}
 
-    def crew_view() -> dict:
-        return {**crew.snapshot(), "places": places}
+    def crew_for(folder: str) -> TerminalCrew:
+        return crews.setdefault(folder_key(folder or projects.current), TerminalCrew())
+
+    def crew_view(folder: str = "") -> dict:
+        folder = folder or projects.current
+        return {**crew_for(folder).snapshot(), "places": places, "project": folder}
+
+    def terminals_view() -> dict:
+        busy = [p for p in projects.paths() if folder_key(p) in crews and crews[folder_key(p)].busy]
+        return {"type": "terminals", "busy": busy, "open": terminals.alive() if terminals else []}
+
+    def usage_view() -> dict:
+        return {"type": "usage", "claude": meter.today(), "gemini": GEMINI.today()}
+
     state = {"startup_error": ""}
 
     async def pump() -> None:
@@ -147,18 +186,45 @@ def create_app(
         except OSError:
             logger.exception("claude could not be started")
             state["startup_error"] = CLAUDE_MISSING
-        tasks = [asyncio.create_task(pump()), asyncio.create_task(publish())]
+        ensure_profile(memory_dir / "cagan.md")
+        tasks = [asyncio.create_task(pump()), asyncio.create_task(publish()),
+                 asyncio.create_task(report_usage()), asyncio.create_task(keep_diary())]
+        if telegram is not None:
+            tasks.append(asyncio.create_task(telegram.run()))
         yield
         for task in tasks:
             task.cancel()
-        if terminal is not None:
-            terminal.close()
+        if terminals is not None:
+            terminals.close()
+        if telegram is not None:
+            await telegram.close()
         await team.close()
+
+    async def report_usage() -> None:
+        while True:
+            with contextlib.suppress(Exception):
+                await clients.send(await asyncio.to_thread(usage_view))
+            await asyncio.sleep(USAGE_EVERY_S)
+
+    async def keep_diary() -> None:
+        """Once a day is over, Cuba writes its diary page and learns from it."""
+        while True:
+            for day in diary.missing(datetime.date.today().isoformat()):
+                written = await diary.write(day, boss.outputs)
+                if written and written["learned"]:
+                    await clients.send({"type": "notice", "text": f"Cuba {len(written['learned'])} yeni şey öğrendi."})
+            await asyncio.sleep(DIARY_EVERY_S)
 
     app = FastAPI(lifespan=lifespan)
     # Rejects DNS-rebinding requests, whose Host is the attacker's domain.
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(allowed_hosts))
-    allowed_origins = {f"http://{host}:{config.port}" for host in LOCAL_HOSTS}
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*allowed_hosts, *remote_hosts])
+    # The phone reaches the page through Tailscale's https proxy, under the machine's tailnet name.
+    allowed_origins = {f"http://{host}:{config.port}" for host in LOCAL_HOSTS} | {f"https://{h}" for h in remote_hosts}
+
+    def same_site(request: Request) -> bool:
+        """A request from this page, not from another site the user has open."""
+        origin = request.headers.get("origin")
+        return origin is None or origin in allowed_origins
 
     @app.middleware("http")
     async def always_fresh(request: Request, call_next):
@@ -173,7 +239,49 @@ def create_app(
     async def index() -> FileResponse:
         return FileResponse(web_dir / "index.html")
 
+    @app.get("/sw.js")
+    async def service_worker() -> FileResponse:
+        # Served from the root so it may look after the whole page, which makes it installable.
+        return FileResponse(web_dir / "sw.js", media_type="text/javascript")
+
+    @app.get("/manifest.webmanifest")
+    async def manifest() -> FileResponse:
+        return FileResponse(web_dir / "manifest.webmanifest", media_type="application/manifest+json")
+
     app.mount("/static", StaticFiles(directory=web_dir, check_dir=False), name="static")
+
+    # ── Memory: Çağan's notebook, the memory files and the diary ──
+
+    @app.get("/api/memory")
+    async def memory_read() -> JSONResponse:
+        files = {}
+        for name in MEMORY_FILES:
+            with contextlib.suppress(FileNotFoundError):
+                files[name] = (memory_dir / name).read_text(encoding="utf-8")
+            files.setdefault(name, "")
+        return JSONResponse({"files": files, "diary": diary.pages()})
+
+    @app.put("/api/memory")
+    async def memory_write(request: Request) -> JSONResponse:
+        if not same_site(request) or request.headers.get("content-type") != "application/json":
+            return JSONResponse({"error": "Yetkisiz istek."}, status_code=403)
+        body = await request.json()
+        name = str(body.get("name", ""))
+        if name not in MEMORY_FILES:
+            return JSONResponse({"error": "Bilinmeyen dosya."}, status_code=400)
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        (memory_dir / name).write_text(str(body.get("text", "")), encoding="utf-8")
+        return JSONResponse({"ok": True})
+
+    @app.post("/api/diary")
+    async def diary_today(request: Request) -> JSONResponse:
+        """Write today's page now, without waiting for the day to end."""
+        if not same_site(request):
+            return JSONResponse({"error": "Yetkisiz istek."}, status_code=403)
+        written = await diary.write(datetime.date.today().isoformat(), boss.outputs)
+        if written is None:
+            return JSONResponse({"error": "Bugün yazılacak bir şey yok ya da Gemini'ye ulaşılamadı."}, status_code=400)
+        return JSONResponse(written)
 
     @app.post("/api/transcribe")
     async def transcribe(request: Request) -> JSONResponse:
@@ -289,11 +397,14 @@ def create_app(
     async def terminal_reply(body: dict) -> dict:
         """What the terminal's Claude is doing; a finished answer or a permission prompt is said aloud."""
         kind = body.get("kind")
+        folder = str(body.get("terminal") or projects.current)
+        crew = crew_for(folder)
+        name = project_name(folder)
         if kind == "permission_request":
             # Away, Cuba says yes in the user's place; present, Claude asks as usual.
             return {"behavior": "allow"} if boss.away else {}
         if kind == "prompt":
-            boss.note_prompt(str(body.get("text", "")))
+            boss.note_prompt(str(body.get("text", "")), folder)
             crew.prompt()
         elif kind == "pre":
             if body.get("tool") in AGENT_TOOLS:
@@ -302,32 +413,46 @@ def create_app(
             crew.tool(str(body.get("tool", "")), dict(body.get("input") or {}),
                       str(body.get("use_id", "")), str(body.get("agent", "")))
         elif kind == "post":
-            crew.tool_done(str(body.get("tool", "")), str(body.get("use_id", "")))
+            crew.tool_done(str(body.get("tool", "")), str(body.get("use_id", "")), str(body.get("result", "")))
         elif kind == "permission":
             crew.permission()
+            if folder not in asking:
+                asking.append(folder)
         elif kind == "stop":
+            if folder in asking:
+                asking.remove(folder)
+            if len(crew.reports) >= 2 and ask is not None:
+                # Two or more did the work: they talk it over while Cuba reports.
+                asyncio.create_task(meet(folder, crew, list(crew.reports)))
             crew.stop()
-        await clients.send(crew_view())
+        await clients.send(crew_view(folder))
+        await clients.send(terminals_view())
         answer: dict = {}
         live_on = live is not None and live.active and not boss.away
+        # Nobody at the screen: the phone hears about it.
+        far = telegram is not None and (boss.away or clients.active is None)
         if kind == "stop" and live_on:
             # Cuba, on the line, passes the report on in his own words.
             report = str(body.get("text", ""))
-            boss.note_report(report)
-            crew.stop()
+            boss.note_report(report, folder)
             await clients.send({"type": "outputs", "items": boss.outputs})
-            await live.tell(f"[EKİP RAPORU]\n{report[-4000:]}")
+            await live.tell(f"[EKİP RAPORU — {name}]\n{report[-4000:]}")
             return {}
+        if kind == "permission" and far and not boss.away:
+            await telegram.ask_approval(f"🔐 {name}: ekip bir işlem için onayını bekliyor. Ayrıntı terminalde.",
+                                        lambda choice: press_in(folder, "\r" if choice == "evet" else "\x1b"))
         if kind == "permission" and live_on:
-            await live.tell("[ONAY İSTENİYOR] Terminaldeki ekip bir işlem için Çağan'ın onayını bekliyor.")
+            await live.tell(f"[ONAY İSTENİYOR] {name} projesindeki ekip bir işlem için Çağan'ın onayını bekliyor.")
             return {}
         if kind == "stop":
-            answer = await boss.on_stop(str(body.get("text", "")))
+            answer = await boss.on_stop(str(body.get("text", "")), folder)
             await clients.send({"type": "outputs", "items": boss.outputs})
             await clients.send(boss.state())
+            if far and boss.outputs and boss.outputs[-1].get("project") == name:
+                await telegram.send(f"✅ {name}: {boss.outputs[-1]['summary']}")
             if "continue_with" in answer:
                 crew.prompt()  # Claude goes on at once
-                await clients.send(crew_view())
+                await clients.send(crew_view(folder))
         if kind == "permission" and not boss.away:
             answer = {"speak": PERMISSION_LINE}
         if "speak" not in answer:
@@ -338,6 +463,43 @@ def create_app(
             await clients.send({"type": "sentence", "text": sentence})
         await clients.send({"type": "turn_end", "error": False, "source": "terminal"})
         return {}
+
+    def press_in(folder: str, keys: str) -> None:
+        if terminals is not None:
+            terminals.get(folder).write(keys)
+
+    async def meet(folder: str, crew: TerminalCrew, reports: list[dict]) -> None:
+        """The subagents who did the work talk it over, line by line, in the office and the feed."""
+        members = []
+        for report in reports:
+            if report["who"] not in [m["id"] for m in members]:
+                members.append({"id": report["who"], "name": report["name"], "duty": DUTIES.get(report["who"], "")})
+        lead = {"id": LEAD_DESK, "name": "Cuba", "duty": "takım lideri"}
+        result = await hold_meeting(ask, members, [f"{r['name']}:\n{r['text']}" for r in reports], lead)
+        if result is None:
+            return
+        crew.review = {"members": [m["id"] for m in members], "speaker": "", "lines": []}
+        names = {**{m["id"]: m["name"] for m in members}, LEAD_DESK: "Cuba"}
+        for line in result["lines"]:
+            crew.review["speaker"] = line["who"]
+            await clients.send(crew_view(folder))
+            await asyncio.sleep(MEETING_PACE_S)
+            crew.review["lines"].append(line)
+        crew.review = None
+        crew.tasks = [{"id": i + 1, "to": t["to"], "status": "proposed", "text": t["text"]}
+                      for i, t in enumerate(result["tasks"])]
+        await clients.send(crew_view(folder))
+        await clients.send({"type": "meeting", "lines": result["lines"], "names": names,
+                            "decisions": result["decisions"], "project": folder})
+        summary = "; ".join(result["decisions"]) or "Toplantı yapıldı."
+        boss.note_meeting(summary, "\n".join(f"{names.get(l['who'], l['who'])}: {l['text']}" for l in result["lines"]), folder)
+        await clients.send({"type": "outputs", "items": boss.outputs})
+        work = "\n".join(f"- {ROLE_NAMES.get(t['to'], 'Cuba')}: {t['text']}" for t in result["tasks"])
+        if live is not None and live.active:
+            await live.tell(f"[TOPLANTI SONUCU — {project_name(folder)}] Kararlar: {summary}"
+                            + (f"\nÖnerilen işler:\n{work}\nÇağan onaylarsa terminale_ver ile ekibe ver." if work else ""))
+        elif telegram is not None:
+            await telegram.send(f"🗣 {project_name(folder)} toplantısı: {summary}" + (f"\nÖnerilen işler:\n{work}" if work else ""))
 
     async def say_aloud(text: str, ws: WebSocket | None = None) -> None:
         if not text:
@@ -360,9 +522,12 @@ def create_app(
             return
         projects.select(path)
         await team.open(path)
-        if terminal is not None:
-            terminal.move_to(path)  # Claude restarts in the new folder when next needed
+        # Open terminal views reconnect, and so show the new project's own terminal.
+        for open_view in list(terminal_sockets):
+            with contextlib.suppress(Exception):
+                await open_view.close(code=1012)
         await clients.send(projects.listing(), ws)
+        await clients.send(crew_view(path), ws)
         await clients.send({"type": "chat", "turns": team.chat}, ws)
 
     @app.websocket("/ws/live")
@@ -375,10 +540,12 @@ def create_app(
 
     @app.websocket("/ws/terminal")
     async def terminal_socket(ws: WebSocket) -> None:
-        if terminal is None or ws.headers.get("origin", next(iter(allowed_origins))) not in allowed_origins:
+        if terminals is None or ws.headers.get("origin", next(iter(allowed_origins))) not in allowed_origins:
             await ws.close(code=1008)
             return
         await ws.accept()
+        terminal_sockets.add(ws)
+        terminal = terminals.get(projects.current)
         terminal.start()
         output = terminal.listen()
         await ws.send_text(terminal.history())
@@ -398,6 +565,7 @@ def create_app(
         except (WebSocketDisconnect, ValueError):
             pass
         finally:
+            terminal_sockets.discard(ws)
             sender.cancel()
             terminal.unlisten(output)
 
@@ -428,7 +596,13 @@ def create_app(
         )
         await clients.send(projects.listing(), ws)
         await clients.send(team_view(), ws)
+        for key in list(crews):
+            await clients.send(crew_view(next((p for p in projects.paths() if folder_key(p) == key), key)), ws)
         await clients.send(crew_view(), ws)
+        await clients.send(terminals_view(), ws)
+        await clients.send(await asyncio.to_thread(usage_view), ws)
+        if telegram is not None and telegram.configured and not telegram.paired:
+            await clients.send({"type": "notice", "text": f"Telegram eşleme kodu: bota '/esle {telegram.pair_code}' yazın."}, ws)
         await clients.send(boss.state(), ws)
         await clients.send({"type": "outputs", "items": boss.outputs}, ws)
         await clients.send({"type": "chat", "turns": team.chat}, ws)
@@ -465,8 +639,8 @@ def create_app(
                     await clients.send(boss.state())
                     if was_away and not boss.away:
                         await say_aloud(await boss.welcome_back(), ws)
-        except WebSocketDisconnect:
-            pass
+        except (WebSocketDisconnect, RuntimeError):
+            pass  # RuntimeError: a newer tab closed this one while it was waiting
         finally:
             if clients.active is ws:
                 clients.active = None
@@ -520,6 +694,20 @@ def _open_when_ready(server, url: str) -> None:
             webbrowser.open(url)
             return
         time.sleep(0.1)
+
+
+def tailnet_names() -> tuple[str, ...]:
+    """This machine's Tailscale name, if Tailscale runs here: the phone reaches Cuba under it."""
+    exe = shutil.which("tailscale") or (r"C:\Program Files\Tailscale\tailscale.exe"
+                                        if Path(r"C:\Program Files\Tailscale\tailscale.exe").exists() else None)
+    if exe is None:
+        return ()
+    try:
+        done = subprocess.run([exe, "status", "--json"], capture_output=True, text=True, encoding="utf-8", timeout=5)
+        name = json.loads(done.stdout)["Self"]["DNSName"].rstrip(".")
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+        return ()
+    return (name,) if name else ()
 
 
 def _read_key(path: Path) -> str:
@@ -580,7 +768,16 @@ def main(argv: list[str] | None = None) -> None:
             on_spawn=kill_with_me,
         )
 
-    team = Team(config.models, bridge_for, data_dir)
+    from server.gemini_bridge import ask_gemini
+
+    async def ask(system: str, prompt: str, as_json: bool) -> str:
+        return await ask_gemini(gemini_key, config.gemini_model, system, prompt, as_json)
+
+    async def meeter(members, reports, lead):
+        return await hold_meeting(ask, members, reports, lead)
+
+    GEMINI.use(data_dir / "usage.json")
+    team = Team(config.models, bridge_for, data_dir, meeter=meeter if gemini_key else None)
     projects = ProjectList(data_dir / "projects.json", config.workdir)
     print("Ses tanıma modeli yükleniyor…", flush=True)
     transcriber = Transcriber(config.whisper_model, config.vocabulary)
@@ -596,23 +793,16 @@ def main(argv: list[str] | None = None) -> None:
     from server.prompts import INSTALLERS, ofis_command
 
     settings = hook_settings(sys.executable, data_dir / "terminal", charter, allow=(ofis_command(), *INSTALLERS))
-    terminal = Terminal(
-        powershell_command(claude_exe, settings, config.terminal_model, plugin), projects.current
-    )
-    from server.gemini_bridge import ask_gemini
+    argv = powershell_command(claude_exe, settings, config.terminal_model, plugin)
+    # Each project gets its own terminal; the hook tells the server which one it speaks for.
+    terminals = TerminalPool(lambda cwd: Terminal(argv, cwd, env={"CLAUDE_SES_TERMINAL": cwd}))
     from server.supervisor import Supervisor
-
-    async def ask(system: str, prompt: str, as_json: bool) -> str:
-        return await ask_gemini(gemini_key, config.gemini_model, system, prompt, as_json)
 
     supervisor = Supervisor(ask if gemini_key else None, data_dir / "terminal" / "outputs.json")
 
     async def hand_over(instruction: str, folder: str) -> None:
-        """Type Cuba's instruction into the terminal's Claude, as if Çağan had, in the project's own folder."""
-        if folder != projects.current:
-            projects.select(folder)
-            await team.open(folder)
-        terminal.move_to(folder)  # a fresh Claude there reads that project's CLAUDE.md and memory
+        """Type Cuba's instruction into that project's own terminal, as if Çağan had; others keep working."""
+        terminal = terminals.get(folder)
         if not terminal.alive:
             terminal.start()
             await asyncio.sleep(8)  # Claude Code takes a moment before it reads its prompt
@@ -621,19 +811,55 @@ def main(argv: list[str] | None = None) -> None:
             f"[Proje: {project_name(folder)} - {folder}. Çalışma klasörün bu değilse hiçbir şeyi "
             f"değiştirme, dur ve sor.] {' '.join(instruction.split())}"
         )
-        supervisor.note_prompt(instruction)
+        supervisor.note_prompt(instruction, folder)
         terminal.write(instruction)
         await asyncio.sleep(0.2)  # text and Enter together would land as a paste
         terminal.write("\r")
 
+    def press(keys: str) -> None:
+        """Answer the terminal that asked last; with none asking, the open project's."""
+        terminals.get(terminals.asking[-1] if terminals.asking else projects.current).write(keys)
+
+    talk = ConversationLog(data_dir / "konusmalar")
+    diary = Diary(MEMORY_DIR, talk, ask if gemini_key else None)
+
+    def last_page() -> str:
+        return diary.latest(datetime.date.today().isoformat())
+
     live = None
     if config.voice_engine == "live" and gemini_key:
         live = LiveHub(
-            gemini_key, config.live_model, config.live_voice, hand_over, terminal.write, projects=projects.listing
+            gemini_key, config.live_model, config.live_voice, hand_over, press, projects=projects.listing,
+            heard=lambda who, text: talk.add(who, text), diary=last_page,
         )
+    telegram = None
+    if gemini_key and (data_dir / "telegram.json").exists():
+        from server.live import CubaTools
+        from server.telegram import TelegramBot
+
+        def status() -> str:
+            busy = [project_name(p) for p in terminals.alive()]
+            lines = [f"Uzak mod: {'açık' if supervisor.away else 'kapalı'}",
+                     f"Açık terminaller: {', '.join(busy) or 'yok'}"]
+            lines += [f"Son: {o['time']} {o.get('project', '')} — {o['summary']}" for o in supervisor.outputs[-3:]]
+            return "\n".join(lines)
+
+        async def toggle_away() -> str:
+            supervisor.set_away(not supervisor.away)
+            return "Uzak mod açık: kararları ben veriyorum efendim." if supervisor.away else "Uzak mod kapandı efendim."
+
+        telegram = TelegramBot(
+            data_dir / "telegram.json", gemini_key, config.gemini_model,
+            CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing),
+            status, toggle_away, lambda: press("\x1b"),
+            heard=lambda who, text, channel: talk.add(who, text, channel), diary=last_page,
+        )
+    remote = (*config.remote_hosts, *tailnet_names())
+    if remote:
+        print(f"Telefondan: https://{remote[0]}  (Tailscale ile)", flush=True)
     app = create_app(
-        config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminal=terminal,
-        supervisor=supervisor, live=live,
+        config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminals=terminals,
+        supervisor=supervisor, live=live, ask=ask if gemini_key else None, telegram=telegram, remote_hosts=remote,
     )
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))
     if args.open:

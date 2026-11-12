@@ -38,6 +38,21 @@ def last_reply(transcript: str) -> str:
     return "\n".join(parts)
 
 
+def result_text(response) -> str:
+    """The words in a tool's response, however Claude Code shaped it."""
+    if isinstance(response, str):
+        return response
+    if isinstance(response, list):
+        return "\n".join(result_text(item) for item in response)
+    if isinstance(response, dict):
+        if isinstance(response.get("text"), str):
+            return response["text"]
+        for key in ("content", "result", "output"):
+            if key in response:
+                return result_text(response[key])
+    return ""
+
+
 def main() -> None:
     kind = sys.argv[1] if len(sys.argv) > 1 else "stop"
     if kind == "session_start":
@@ -47,7 +62,8 @@ def main() -> None:
         return
     sys.stdout.reconfigure(encoding="utf-8")
     data = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
-    body = {"kind": kind}
+    # Which project's terminal this Claude runs in: each project has its own.
+    body = {"kind": kind, "terminal": os.environ.get("CLAUDE_SES_TERMINAL", "")}
     if kind == "prompt":
         body["text"] = data.get("prompt", "")
     elif kind == "stop":
@@ -58,6 +74,9 @@ def main() -> None:
             # Only the short fields the office shows; a file being written can be large.
             input={k: v for k, v in (data.get("tool_input") or {}).items() if isinstance(v, str) and len(v) < 500},
         )
+        if kind == "post":
+            # A subagent's final report: the team talks it over once the work is done.
+            body["result"] = result_text(data.get("tool_response"))[-3000:]
     request = urllib.request.Request(
         f"http://127.0.0.1:{os.environ.get('CLAUDE_SES_PORT', '8765')}/api/team/terminal",
         data=json.dumps(body).encode("utf-8"),

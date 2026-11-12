@@ -115,7 +115,14 @@ class Team:
         bridge_factory: BridgeFactory,
         data_dir: Path,
         clock: Callable[[], float] = time.monotonic,
+        meeter: Callable | None = None,
+        pace: float = 3.5,
     ) -> None:
+        # meeter(members, reports, lead) writes the whole meeting on Gemini (server/meeting.py);
+        # without it the workers' own Claude sessions take turns, which costs Claude tokens.
+        self._meeter = meeter
+        self._pace = pace
+        self._meeting_task: asyncio.Task | None = None
         self._models = models
         self._bridge_factory = bridge_factory
         self._data_dir = data_dir
@@ -443,6 +450,11 @@ class Team:
                 reports=self._undiscussed,
             )
             self._attended, self._undiscussed = [], []
+            if self._meeter is not None:
+                meeting = self._meeting
+                meeting.order, meeting.speaker = [], LEAD  # the floor is held until the talk is played out
+                self._meeting_task = asyncio.create_task(self._talk_it_over(meeting))
+                return
             await self._next_speaker()
         else:
             if not more_to_start:
@@ -473,6 +485,32 @@ class Team:
         self._save()
         self._touch()
         await self._deliver_reports()
+
+    async def _talk_it_over(self, meeting: Meeting) -> None:
+        """Play a meeting written on Gemini, a line every few seconds; its proposals become the plan."""
+        role = lambda rid: self.agents[rid].role  # noqa: E731
+        members = [{"id": m, "name": role(m).name, "duty": role(m).duty} for m in meeting.members]
+        lead = {"id": LEAD, "name": role(LEAD).name, "duty": role(LEAD).duty}
+        try:
+            result = await self._meeter(members, meeting.reports, lead)
+        except Exception:  # noqa: BLE001
+            logger.exception("meeting could not be held")
+            result = None
+        for line in (result or {}).get("lines", []):
+            if self._meeting is not meeting:
+                return  # the user stopped it
+            meeting.speaker = line["who"]
+            self._touch()
+            await asyncio.sleep(self._pace)
+            meeting.lines.append(line)
+        if self._meeting is not meeting:
+            return
+        proposals = [(t["to"], t["text"]) for t in (result or {}).get("tasks", []) if t["to"] != LEAD]
+        if proposals:
+            with contextlib.suppress(TeamError):
+                self.plan(proposals)
+        meeting.speaker = ""
+        await self._next_speaker()  # nobody is left to speak: this closes the meeting
 
     def _meeting_prompt(self, meeting: Meeting, agent: Agent, last: bool) -> str:
         said = "\n".join(f"{self.agents[line['who']].role.name}: {line['text']}" for line in meeting.lines)

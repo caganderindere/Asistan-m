@@ -106,10 +106,13 @@ def spoken(text: str) -> str:
 class Terminal:
     """One pseudo-console shared by every viewer, kept alive across page reloads."""
 
-    def __init__(self, argv: list[str], cwd: str, spawn: Callable | None = None) -> None:
+    def __init__(
+        self, argv: list[str], cwd: str, spawn: Callable | None = None, env: dict[str, str] | None = None
+    ) -> None:
         self._argv = argv
         self._cwd = cwd
         self._spawn = spawn
+        self._env = env or {}
         self._proc = None
         self._scrollback: deque[str] = deque()
         self._size = 0
@@ -145,7 +148,7 @@ class Terminal:
         self._size = 0
         for queue in self._listeners:
             queue.put_nowait("\x1bc")  # open screens start over too
-        self._proc = spawn(self._argv, cwd=self._cwd, env=child_env(os.environ), dimensions=(rows, cols))
+        self._proc = spawn(self._argv, cwd=self._cwd, env={**child_env(os.environ), **self._env}, dimensions=(rows, cols))
         threading.Thread(target=self._read, args=(self._proc,), daemon=True).start()
 
     def write(self, data: str) -> None:
@@ -192,6 +195,34 @@ class Terminal:
             queue.put_nowait(data)
 
 
+def folder_key(path: str) -> str:
+    """One spelling per folder, whatever case or slashes it was written with."""
+    return os.path.normcase(os.path.normpath(path)) if path else ""
+
+
+class TerminalPool:
+    """One terminal per project folder, so work in one project never stops another's."""
+
+    def __init__(self, make: Callable[[str], Terminal]) -> None:
+        self._make = make
+        self._terminals: dict[str, Terminal] = {}
+        self.asking: list[str] = []  # folders whose Claude waits for a yes, oldest first
+
+    def get(self, cwd: str) -> Terminal:
+        key = folder_key(cwd)
+        if key not in self._terminals:
+            self._terminals[key] = self._make(cwd)
+        return self._terminals[key]
+
+    def alive(self) -> list[str]:
+        """The folders whose terminal is running."""
+        return [t.cwd for t in self._terminals.values() if t.alive]
+
+    def close(self) -> None:
+        for terminal in self._terminals.values():
+            terminal.close()
+
+
 def tool_summary(tool_input: dict) -> str:
     for key in ("description", "command", "file_path", "pattern", "url", "prompt"):
         value = tool_input.get(key)
@@ -206,6 +237,9 @@ class TerminalCrew:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self.question = ""
+        self.reports: list[dict] = []  # what each subagent handed back this turn: {who, name, text}
+        self.review: dict | None = None  # the meeting going on: {members, speaker, lines}
+        self.tasks: list[dict] = []  # work the last meeting proposed
         self._desks = {
             desk: {"name": "Claude Code" if desk == LEAD_DESK else "Alt ajan", "state": "idle",
                    "activity": "", "since": clock(), "key": "", "agent": "",
@@ -215,6 +249,7 @@ class TerminalCrew:
 
     def prompt(self) -> None:
         self.question = ""
+        self.reports = []
         self._work(LEAD_DESK, "Düşünüyor")
 
     def tool(self, name: str, tool_input: dict, use_id: str = "", agent: str = "") -> None:
@@ -233,12 +268,18 @@ class TerminalCrew:
             return
         self._work(self._desk_of(agent), f"{name}: {summary}" if summary else name)
 
-    def tool_done(self, name: str, use_id: str) -> None:
+    def tool_done(self, name: str, use_id: str, result: str = "") -> None:
         if name not in AGENT_TOOLS:
             return
         for desk_id in SUB_DESKS:
             if self._desks[desk_id]["key"] == use_id:
+                if result.strip():
+                    self.reports.append({"who": desk_id, "name": self._desks[desk_id]["name"], "text": result.strip()})
                 self._rest(desk_id)
+
+    @property
+    def busy(self) -> bool:
+        return any(d["state"] == "working" for d in self._desks.values()) or self.review is not None
 
     def stop(self) -> None:
         self.question = ""
@@ -253,10 +294,10 @@ class TerminalCrew:
         working = any(d["state"] == "working" for d in self._desks.values())
         return {
             "type": "terminal_team",
-            "phase": "working" if working else "idle",
+            "phase": "review" if self.review else "working" if working else "idle",
             "question": self.question,
-            "review": None,
-            "tasks": [],
+            "review": self.review,
+            "tasks": self.tasks,
             "agents": [
                 {"id": desk_id, "name": d["name"], "department": "Terminal", "duty": "", "model": "",
                  "state": d["state"], "activity": d["activity"], "seconds": round(now - d["since"]),

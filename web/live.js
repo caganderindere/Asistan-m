@@ -83,7 +83,7 @@ export function createLive({ onEvent, onSpeaking }) {
 
     async start(stream) {
       if (ws) return;
-      ws = new WebSocket(`ws://${location.host}/ws/live`);
+      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/live`);
       ws.binaryType = 'arraybuffer';
       const socket = ws;
       ws.onmessage = (e) => {

@@ -256,3 +256,30 @@ async def test_new_session_clears_the_project(team):
     assert team.tasks == [] and team.chat == []
     assert all(b.new_sessions == 1 for b in team.fakes.values())
     assert all(a["state"] == "idle" for a in team.snapshot()["agents"])
+
+
+async def test_a_gemini_meeting_is_played_out_and_its_proposals_await_approval(tmp_path):
+    asked = []
+
+    async def meeter(members, reports, lead):
+        asked.append(([m["id"] for m in members], reports, lead["id"]))
+        return {"lines": [{"who": "testci", "text": "Geliştirici, tarih biçimi testi kırdı."},
+                          {"who": "gelistirici", "text": "Haklısın, geri alıyorum."},
+                          {"who": LEAD, "text": "Anlaştık."}],
+                "decisions": ["Biçim geri alınacak."],
+                "tasks": [{"to": "gelistirici", "text": "Tarih biçimini geri al."}, {"to": LEAD, "text": "x"}]}
+
+    team = make_team(tmp_path, FakeBridge(), meeter=meeter, pace=0)
+    await team.open(str(tmp_path))
+    await settle()
+    await two_finish_their_work(team)
+    for _ in range(10):
+        await settle()
+    assert asked[0][0] == ["gelistirici", "testci"] and asked[0][2] == LEAD and len(asked[0][1]) == 2
+    assert all(not s.startswith("[EKİP TOPLANTISI]") for s in team.fakes["gelistirici"].sent)  # no Claude tokens
+    told = team.fakes[LEAD].sent[-1]
+    assert "Testçi: Geliştirici, tarih biçimi testi kırdı." in told
+    assert [(t.to, t.text, t.status) for t in team.tasks if t.status == "proposed"] == [
+        ("gelistirici", "Tarih biçimini geri al.", "proposed")]
+    assert team.chat[-1]["meeting"][-1] == {"who": LEAD, "text": "Anlaştık."}
+    await team.close()

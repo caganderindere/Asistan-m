@@ -257,3 +257,54 @@ async def test_moving_to_another_project_closes_claude_and_restarts_there(tmp_pa
     terminal.start()
     assert cwds == [str(tmp_path / "a"), str(tmp_path / "b")]
     terminal.close()
+
+
+def test_each_project_has_its_own_terminal(tmp_path):
+    from server.terminal import TerminalPool
+
+    made = []
+    pool = TerminalPool(lambda cwd: made.append(cwd) or Terminal(["x"], cwd))
+    a = pool.get(str(tmp_path / "A"))
+    assert pool.get(str(tmp_path / "a") + "\\") is a  # same folder, other spelling
+    assert pool.get(str(tmp_path / "b")) is not a
+    assert made == [str(tmp_path / "A"), str(tmp_path / "b")] and pool.alive() == []
+
+
+def test_two_subagent_reports_bring_the_team_to_a_meeting(tmp_path, pty, monkeypatch):
+    from server.terminal import TerminalPool
+
+    lines = {"lines": [{"who": "gelistirici", "text": "Testçi, girişi denedin mi?"},
+                       {"who": "testci", "text": "Denedim, geçti."}],
+             "kararlar": ["Giriş tamam."], "gorevler": [{"kim": "testci", "is": "Çıkışı da dene."}]}
+
+    async def ask(system, prompt, as_json):
+        assert "Geliştirici:\nkodu yazdım" in prompt and "Testçi:\ntest ettim" in prompt
+        return json.dumps(lines)
+
+    monkeypatch.setattr("server.app.MEETING_PACE_S", 0)
+    pool = TerminalPool(lambda cwd: Terminal(["x"], cwd, spawn=lambda *a, **k: pty))
+    app = make_app(tmp_path, FakeBridge(), allowed_hosts=("127.0.0.1", "localhost", "testserver"),
+                   terminals=pool, ask=ask)
+    other = str(tmp_path / "baska")
+
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        def post(body):
+            client.post("/api/team/terminal", json={"terminal": other, **body}, headers={"X-Ekip-Token": TOKEN})
+
+        with client.websocket_connect("/ws") as ws:
+            post({"kind": "prompt", "text": "giriş sayfası"})
+            for role, use in (("gelistirici", "u1"), ("testci", "u2")):
+                post({"kind": "pre", "tool": "Agent", "use_id": use, "input": {"subagent_type": f"cuba-ekip:{role}"}})
+            post({"kind": "post", "tool": "Agent", "use_id": "u1", "result": "kodu yazdım"})
+            post({"kind": "post", "tool": "Agent", "use_id": "u2", "result": "test ettim"})
+            post({"kind": "stop", "text": "Bitti."})
+            seen = read_until(ws, "meeting")
+    meeting = seen[-1]
+    assert meeting["project"] == other and meeting["decisions"] == ["Giriş tamam."]
+    assert meeting["names"]["testci"] == "Testçi" and len(meeting["lines"]) == 2
+    crews = [m for m in seen if m["type"] == "terminal_team" and m["project"] == other]
+    assert any(m["phase"] == "review" for m in crews)
+    assert crews[-1]["phase"] != "review" and crews[-1]["tasks"][0]["text"] == "Çıkışı da dene."
+    # The open project's office never showed the other project's work.
+    assert not any(m["agents"][0]["state"] == "working" for m in seen
+                   if m["type"] == "terminal_team" and m["project"] == str(tmp_path))

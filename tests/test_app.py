@@ -4,6 +4,7 @@ import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+from server.usage import ClaudeMeter
 from server.app import BRIEFING_PROMPT, create_app
 from server.claude_events import TextDelta, ToolUse, TurnResult
 from server.config import Config
@@ -72,16 +73,18 @@ async def failing_synth(text, voice):
 TOKEN = "test-token"
 
 
-def make_team(tmp_path, lead):
+def make_team(tmp_path, lead, **kwargs):
     """A team whose lead is *lead*; the workers' bridges are in team.fakes."""
     fakes = {LEAD: lead}
-    team = Team(Config().models, lambda role, *_: fakes.setdefault(role.id, FakeBridge()), tmp_path)
+    team = Team(Config().models, lambda role, *_: fakes.setdefault(role.id, FakeBridge()), tmp_path, **kwargs)
     team.fakes = fakes
     return team
 
 
 def make_app(tmp_path, bridge, transcriber=None, synth=ok_synth, team=None, config=None, **kwargs):
     projects = ProjectList(tmp_path / "projects.json", str(tmp_path), tmp_path / "no-claude-projects")
+    kwargs.setdefault("memory_dir", tmp_path / "asistan")
+    kwargs.setdefault("claude_meter", ClaudeMeter(tmp_path / "no-claude-projects"))
     return create_app(config or Config(), team or make_team(tmp_path, bridge), projects,
                       transcriber or FakeTranscriber(), synth, data_dir=tmp_path, token=TOKEN, **kwargs)
 
@@ -243,7 +246,7 @@ AUTH = {"X-Ekip-Token": TOKEN}
 def test_connect_sends_projects_team_and_chat(client, tmp_path):
     with client.websocket_connect("/ws") as ws:
         msgs = read_until(ws, "chat")
-    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "away", "outputs", "chat"]
+    assert [m["type"] for m in msgs] == ["status", "projects", "team", "terminal_team", "terminals", "usage", "away", "outputs", "chat"]
     assert msgs[1]["current"] == str(tmp_path)
     assert [a["id"] for a in msgs[2]["agents"]] == ["lider", "kidemli", "gelistirici", "testci", "asistan"]
     assert msgs[2]["agents"][4]["model"] == "claude-haiku-5-5"

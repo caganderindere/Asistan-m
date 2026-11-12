@@ -11,10 +11,12 @@ const notice = $('notice');
 const conn = $('conn');
 const history = $('history');
 const turnTemplate = $('turnTemplate');
-const office = createOffice($('office'), (id) => { if (id !== 'cagan') selectAgent(id); });
+const OBJECT_PANES = { printer: 'outputs', clock: 'memory', shelf: 'project', table: 'feed', board: 'tasks' };
+const openObject = (id) => { if (OBJECT_PANES[id]) showPane(OBJECT_PANES[id]); };
+const office = createOffice($('office'), (id) => { if (id !== 'cagan') selectAgent(id); }, openObject);
 const terminal = createTerminalView($('terminalWrap'));
 // The terminal's own office: Claude Code at the lead's desk, its subagents at the others.
-const termOffice = createOffice($('termOffice'), () => {});
+const termOffice = createOffice($('termOffice'), () => {}, openObject);
 const ESC = '\x1b';
 // Spoken answers to Claude Code's permission prompt in the terminal.
 const YES = new Set(['evet', 'onayla', 'onaylıyorum', 'tamam', 'olur', 'devam']);
@@ -49,6 +51,11 @@ let cpuNoticeShown = false;
 let team = null; // the latest team snapshot
 let termTeam = null; // the latest snapshot of the terminal's Claude and its subagents
 let projectList = []; // every project, before the search box filters it
+let busyProjects = new Set(); // projects whose team is at work
+let openProjects = new Set(); // projects with a running terminal
+const crewOf = new Map(); // each project's terminal team, by folder
+const decisions = []; // what meetings decided, oldest first
+const projectName = (path) => projectList.find((p) => p.path === path)?.name ?? path.split(/[\\/]/).pop();
 let project = '';
 let selectedAgent = null;
 let liveMeeting = null; // the block showing a team meeting while it is going on
@@ -87,7 +94,7 @@ function send(message) {
 // ── Connection ──────────────────────────────────────────────
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
   ws.onopen = () => { conn.dataset.state = 'ready'; conn.textContent = 'Claude bağlı'; };
   ws.onmessage = (e) => handle(JSON.parse(e.data));
   ws.onclose = () => {
@@ -119,13 +126,26 @@ function handle(msg) {
     case 'team':
       showTeam(msg);
       break;
-    case 'terminal_team':
-      termTeam = msg;
-      noteActivity('terminal', msg);
+    case 'terminal_team': {
+      // Every project has its own terminal; the office shows the open project's.
+      const here = !msg.project || msg.project === project;
+      crewOf.set(msg.project ?? project, msg);
+      noteActivity(`terminal:${msg.project}`, msg, here ? '' : projectName(msg.project));
       showHud();
+      if (!here) break;
+      termTeam = msg;
       termOffice.update(msg);
       $('termQuestion').hidden = !msg.question;
       $('termQuestion').textContent = msg.question;
+      break;
+    }
+    case 'terminals':
+      busyProjects = new Set(msg.busy);
+      openProjects = new Set(msg.open);
+      renderProjects();
+      break;
+    case 'usage':
+      showUsage(msg);
       break;
     case 'chat':
       history.replaceChildren();
@@ -139,9 +159,9 @@ function handle(msg) {
       break;
     case 'meeting':
       // The team has finished talking; what was said stays in the conversation.
-      liveMeeting?.remove();
-      liveMeeting = null;
-      history.append(meetingBlock(msg.lines));
+      if (!msg.project) { liveMeeting?.remove(); liveMeeting = null; }
+      history.append(meetingBlock(msg.lines, '', msg.names, msg.decisions, msg.project && projectName(msg.project)));
+      if (msg.decisions?.length) { decisions.push(...msg.decisions); office.setDecisions(decisions); termOffice.setDecisions(decisions); }
       scrollHistory();
       break;
     case 'notice':
@@ -237,6 +257,9 @@ function showProjects({ current, projects }) {
   }
   project = current;
   projectList = projects;
+  // The terminal office follows the open project.
+  const crew = crewOf.get(current);
+  if (crew) { termTeam = crew; termOffice.update(crew); }
   const open = projects.find((p) => p.path === current);
   $('workdir').textContent = open?.name ?? current;
   $('workdir').title = current;
@@ -255,6 +278,8 @@ function renderProjects() {
     button.className = 'project';
     button.title = path;
     if (path === current) button.setAttribute('aria-current', 'true');
+    if (busyProjects.has(path)) button.dataset.state = 'busy';
+    else if (openProjects.has(path)) button.dataset.state = 'open';
     button.append(Object.assign(document.createElement('b'), { textContent: name }));
     button.append(Object.assign(document.createElement('small'), { textContent: path }));
     button.addEventListener('click', () => chooseProject(path));
@@ -304,11 +329,11 @@ function showRoster({ agents, review, phase }) {
   }));
 }
 
-function meetingBlock(lines, speaker = '') {
-  const names = Object.fromEntries((team?.agents ?? []).map((a) => [a.id, a.name]));
+function meetingBlock(lines, speaker = '', given = null, decided = [], where = '') {
+  const names = given ?? Object.fromEntries((team?.agents ?? []).map((a) => [a.id, a.name]));
   const block = document.createElement('article');
   block.className = 'meeting';
-  block.append(Object.assign(document.createElement('h3'), { textContent: 'Ekip toplantısı' }));
+  block.append(Object.assign(document.createElement('h3'), { textContent: where ? `Ekip toplantısı · ${where}` : 'Ekip toplantısı' }));
   for (const line of lines) {
     const p = document.createElement('p');
     p.style.setProperty('--who', office.color(line.who));
@@ -319,6 +344,11 @@ function meetingBlock(lines, speaker = '') {
     const p = Object.assign(document.createElement('p'), { className: 'waiting', textContent: `${names[speaker] ?? speaker} konuşuyor…` });
     p.style.setProperty('--who', office.color(speaker));
     block.append(p);
+  }
+  if (decided.length) {
+    const list = Object.assign(document.createElement('ul'), { className: 'decisions' });
+    list.append(...decided.map((d) => Object.assign(document.createElement('li'), { textContent: d })));
+    block.append(list);
   }
   return block;
 }
@@ -340,19 +370,20 @@ const lastSeen = new Map(); // "source:agent" → the activity last put in the f
 const heardLines = new Map(); // source → meeting lines already in the feed
 
 /** Put what is new in a team snapshot into the feed: started work, tool steps, meeting words. */
-function noteActivity(source, snapshot) {
+function noteActivity(source, snapshot, where = '') {
+  const tag = (name) => (where ? `${name} · ${where}` : name);
   for (const agent of snapshot.agents) {
     const key = `${source}:${agent.id}`;
     const activity = agent.state === 'working' ? agent.activity : '';
-    if (activity && activity !== lastSeen.get(key)) addFeed(agent.id, agent.name, activity, 'work');
-    if (!activity && lastSeen.get(key) && agent.state === 'idle') addFeed(agent.id, agent.name, 'İşini bitirdi.', 'done');
-    if (agent.state === 'error' && lastSeen.get(key) !== '!') addFeed(agent.id, agent.name, 'Hata verdi.', 'error');
+    if (activity && activity !== lastSeen.get(key)) addFeed(agent.id, tag(agent.name), activity, 'work');
+    if (!activity && lastSeen.get(key) && agent.state === 'idle') addFeed(agent.id, tag(agent.name), 'İşini bitirdi.', 'done');
+    if (agent.state === 'error' && lastSeen.get(key) !== '!') addFeed(agent.id, tag(agent.name), 'Hata verdi.', 'error');
     lastSeen.set(key, agent.state === 'error' ? '!' : activity);
   }
   const lines = snapshot.review?.lines ?? [];
   const heard = snapshot.review ? heardLines.get(source) ?? 0 : 0;
-  const names = Object.fromEntries(snapshot.agents.map((a) => [a.id, a.name]));
-  for (const line of lines.slice(heard)) addFeed(line.who, names[line.who] ?? line.who, line.text, 'talk');
+  const names = { ...Object.fromEntries(snapshot.agents.map((a) => [a.id, a.name])), lider: 'Cuba' };
+  for (const line of lines.slice(heard)) addFeed(line.who, tag(names[line.who] ?? line.who), line.text, 'talk');
   heardLines.set(source, lines.length);
 }
 
@@ -382,10 +413,23 @@ function feedRow({ who, name, text, kind, time }) {
 // ── Header: the open project, the team, the time ────────────
 
 function showHud() {
-  const working = [...(team?.agents ?? []), ...(termTeam?.agents ?? [])].filter((a) => a.state === 'working').length;
+  const crews = [...crewOf.values()].flatMap((c) => c.agents);
+  const working = [...(team?.agents ?? []), ...crews].filter((a) => a.state === 'working').length;
   const hud = $('hudTeam');
   hud.textContent = working ? `${working} ajan çalışıyor` : team?.phase === 'review' ? 'toplantıda' : 'hazır';
   hud.dataset.busy = String(working > 0);
+}
+
+const short = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
+
+function showUsage({ claude, gemini }) {
+  office.setUsage({ claude, gemini });
+  termOffice.setUsage({ claude, gemini });
+  const hud = $('hudTokens');
+  hud.textContent = `C ${short(claude.input + claude.output)} · G ${short(gemini.input + gemini.output)}`;
+  hud.title = `Claude: giriş ${claude.input.toLocaleString('tr-TR')}, çıkış ${claude.output.toLocaleString('tr-TR')}, `
+    + `önbellek ${claude.cache.toLocaleString('tr-TR')}\nGemini: giriş ${gemini.input.toLocaleString('tr-TR')}, `
+    + `çıkış ${gemini.output.toLocaleString('tr-TR')}`;
 }
 
 function tick() {
@@ -783,6 +827,7 @@ const live = createLive({
         setState('listening');
         break;
       case 'user': {
+        lastHeard = Date.now();
         currentTurn ??= addTurn('');
         let you = currentTurn.node.querySelector('.you');
         if (!you) {
@@ -824,6 +869,8 @@ const live = createLive({
 });
 
 async function startLive() {
+  waker?.abort();
+  waker = null;
   handsFree = true;
   setState('working', 'Cuba bağlanıyor…');
   try {
@@ -836,6 +883,9 @@ async function startLive() {
 }
 
 function startHandsFree() {
+  waker?.abort();
+  waker = null;
+  lastHeard = Date.now();
   if (ws?.readyState !== WebSocket.OPEN) { showNotice('Sunucuya bağlı değil.'); return; }
   if (liveAvailable) { startLive(); return; }
   handsFree = true;
@@ -870,6 +920,63 @@ function stopEveryone() {
   stopAll(false);
   send({ type: 'stop' });
 }
+
+// ── Wake word: say "Cuba" and it listens ───────────────────
+// The browser's own speech recognition (Chrome/Edge) waits for the name; then the usual
+// conversation starts. After a minute and a half of silence it goes back to waiting.
+
+const WAKE = /\b(cuba|küba|kuba|kubaa|cubaa)\b/i;
+const SLEEP_AFTER_MS = 90_000;
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let wakeOn = false;
+let waker = null;
+let lastHeard = Date.now();
+
+function setWake(on) {
+  wakeOn = on && Boolean(Recognition);
+  try { localStorage.setItem('cuba.wake', wakeOn ? '1' : '0'); } catch { /* private window */ }
+  $('wakeToggle').setAttribute('aria-pressed', String(wakeOn));
+  if (wakeOn) waitForName(); else { waker?.abort(); waker = null; }
+}
+
+function waitForName() {
+  if (!wakeOn || waker || handsFree || replaced) return;
+  waker = new Recognition();
+  waker.lang = 'tr-TR';
+  waker.continuous = true;
+  waker.interimResults = true;
+  waker.onresult = (event) => {
+    const said = [...event.results].slice(event.resultIndex).map((r) => r[0].transcript).join(' ');
+    if (!WAKE.test(said)) return;
+    waker.onend = null;
+    waker.abort();
+    waker = null;
+    lastHeard = Date.now();
+    startHandsFree();
+  };
+  // Chrome ends recognition now and then on its own; it is started again while waiting.
+  waker.onend = () => { waker = null; setTimeout(waitForName, 400); };
+  waker.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { setWake(false); showNotice(MIC_DENIED); }
+  };
+  try { waker.start(); } catch { waker = null; }
+}
+
+// A talk nobody has spoken in for a while goes back to sleep, so the line is not kept open for nothing.
+setInterval(() => {
+  if (wakeOn && handsFree && !speaking && !turnOpen && state !== 'speaking' && Date.now() - lastHeard > SLEEP_AFTER_MS) {
+    stopAll(true);
+    showNotice('Uyku moduna geçtim. "Cuba" demen yeterli.', 4000);
+  }
+  if (wakeOn && !handsFree) waitForName();
+}, 5000);
+
+if (!Recognition) {
+  $('wakeToggle').disabled = true;
+  $('wakeToggle').title = 'Bu tarayıcı konuşma tanımayı desteklemiyor (Chrome ya da Edge gerekir).';
+}
+$('wakeToggle').addEventListener('click', () => setWake(!wakeOn));
+try { if (localStorage.getItem('cuba.wake') === '1') setWake(true); } catch { /* private window */ }
 
 orb.addEventListener('click', () => {
   if (replaced) return;
@@ -1002,6 +1109,51 @@ async function showProject() {
   box.replaceChildren(...parts);
 }
 
+// ── Memory: what Cuba knows about Çağan, and its diary ─────
+
+let memoryFiles = {};
+async function showMemory() {
+  let data;
+  try {
+    data = await (await fetch('/api/memory')).json();
+  } catch {
+    $('memoryState').textContent = 'Hafıza okunamadı.';
+    return;
+  }
+  memoryFiles = data.files;
+  $('memoryText').value = memoryFiles[$('memoryFile').value] ?? '';
+  $('memoryState').textContent = 'Cuba öğrendiklerini buraya yazar; yanlışı düzeltebilir, eksiği ekleyebilirsin.';
+  $('diary').replaceChildren(...(data.diary.length ? data.diary.map(({ day, text }) => {
+    const details = Object.assign(document.createElement('details'), { className: 'paper' });
+    details.append(Object.assign(document.createElement('summary'), {
+      textContent: new Date(`${day}T12:00`).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' }),
+    }));
+    details.append(Object.assign(document.createElement('pre'), { className: 'readme', textContent: text }));
+    return details;
+  }) : [Object.assign(document.createElement('p'), {
+    className: 'empty', textContent: 'Her günün sonunda Cuba o günü buraya yazar ve senin hakkında öğrendiklerini deftere ekler.',
+  })]));
+}
+$('memoryFile').addEventListener('change', () => { $('memoryText').value = memoryFiles[$('memoryFile').value] ?? ''; });
+$('memorySave').addEventListener('click', async () => {
+  const name = $('memoryFile').value;
+  const text = $('memoryText').value;
+  const response = await fetch('/api/memory', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }),
+  }).catch(() => null);
+  if (response?.ok) memoryFiles[name] = text;
+  $('memoryState').textContent = response?.ok ? 'Kaydedildi. Cuba bir sonraki konuşmada bunu bilir.' : 'Kaydedilemedi.';
+});
+$('diaryToday').addEventListener('click', async () => {
+  $('memoryState').textContent = 'Bugünün günlüğü yazılıyor…';
+  const response = await fetch('/api/diary', { method: 'POST' }).catch(() => null);
+  const data = await response?.json().catch(() => ({}));
+  $('memoryState').textContent = response?.ok
+    ? `Yazıldı.${data.learned?.length ? ` Yeni öğrenilen: ${data.learned.join(' · ')}` : ''}`
+    : data?.error ?? 'Yazılamadı.';
+  if (response?.ok) showMemory();
+});
+
 let pane = 'talk';
 function showPane(next) {
   pane = next;
@@ -1012,6 +1164,7 @@ function showPane(next) {
     if (section.tagName !== 'BUTTON') section.hidden = section.dataset.pane !== next;
   }
   if (next === 'project') showProject();
+  if (next === 'memory') showMemory();
   if (next === 'feed') {
     delete document.querySelector('.side-tabs [data-pane="feed"]').dataset.fresh;
     $('feed').scrollTop = $('feed').scrollHeight;
@@ -1031,6 +1184,8 @@ document.addEventListener('keydown', (e) => {
   // Inside the terminal Esc belongs to Claude Code, which stops its own turn with it.
   if (e.key === 'Escape' && !$('terminalWrap').contains(document.activeElement)) stopEveryone();
 });
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 setState('idle');
 connect();

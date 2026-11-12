@@ -23,7 +23,7 @@ export function createTerminalView(container) {
   };
 
   function connect() {
-    ws = new WebSocket(`ws://${location.host}/ws/terminal`);
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/terminal`);
     let first = true;
     ws.onmessage = (e) => {
       // The first message replays what the terminal showed before this page opened.

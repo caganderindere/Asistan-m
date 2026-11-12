@@ -2,12 +2,19 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080E1E">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
   <title>Cuba · Komuta Merkezi</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=9">
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
   <!-- Silero VAD, the speech detector Pipecat and LiveKit use, running in the browser. -->
@@ -32,6 +39,7 @@
       <dl class="hud">
         <div title="Açık proje"><dt>Proje</dt><dd id="workdir">—</dd></div>
         <div><dt>Ekip</dt><dd id="hudTeam">hazır</dd></div>
+        <div title="Bugün harcanan token (giriş + çıkış). Claude: bilgisayardaki tüm Claude Code oturumları."><dt>Token · bugün</dt><dd id="hudTokens">—</dd></div>
         <div><dt id="hudDate"></dt><dd id="hudClock">--:--</dd></div>
       </dl>
       <button class="away" id="awayToggle" type="button" aria-pressed="false"
@@ -96,6 +104,10 @@
         <input id="sayText" type="text" placeholder="Ya da Cuba'ya yaz" autocomplete="off" aria-label="Cuba'ya yaz">
         <button type="submit">Gönder</button>
       </form>
+      <button class="wake" id="wakeToggle" type="button" aria-pressed="false"
+              title="Açıkken 'Cuba' demen yeterli: küreye dokunmadan dinlemeye başlar. Bir buçuk dakika sessizlikte uykuya döner.">
+        <i aria-hidden="true"></i><span>“Cuba” de</span>
+      </button>
       <button class="stop" id="stop" type="button">Dur <kbd>Esc</kbd></button>
     </section>
   </main>
@@ -107,6 +119,7 @@
       <button type="button" role="tab" data-pane="tasks" aria-selected="false">Görevler</button>
       <button type="button" role="tab" data-pane="outputs" aria-selected="false">Çıktılar</button>
       <button type="button" role="tab" data-pane="project" aria-selected="false">Proje</button>
+      <button type="button" role="tab" data-pane="memory" aria-selected="false">Hafıza</button>
     </div>
     <section class="panel" data-pane="talk">
       <div class="history" id="history" aria-label="Konuşma geçmişi"></div>
@@ -121,6 +134,25 @@
     </section>
     <section class="panel" data-pane="project" hidden>
       <div class="project-info" id="projectInfo"></div>
+    </section>
+    <section class="panel" data-pane="memory" hidden>
+      <div class="memory-head">
+        <label for="memoryFile">Defter</label>
+        <select id="memoryFile">
+          <option value="cagan.md">Çağan hakkında</option>
+          <option value="takvim.md">Takvim</option>
+          <option value="gorevler.md">Görevler</option>
+          <option value="notlar.md">Notlar</option>
+        </select>
+        <button type="button" id="memorySave" class="primary">Kaydet</button>
+      </div>
+      <textarea id="memoryText" spellcheck="false" aria-label="Defterin içeriği"></textarea>
+      <p class="hint" id="memoryState">Cuba öğrendiklerini buraya yazar; yanlışı düzeltebilir, eksiği ekleyebilirsin.</p>
+      <div class="memory-head">
+        <h4>Günlük</h4>
+        <button type="button" id="diaryToday" class="ghost">Bugünü şimdi yaz</button>
+      </div>
+      <div id="diary"></div>
     </section>
     <section class="panel" data-pane="tasks" hidden>
       <ol id="tasks"></ol>
@@ -139,6 +171,6 @@
     </article>
   </template>
 
-  <script type="module" src="/static/app.js?v=8"></script>
+  <script type="module" src="/static/app.js?v=9"></script>
 </body>
 </html>

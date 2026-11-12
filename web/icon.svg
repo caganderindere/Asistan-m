@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="sky" cx="70%" cy="20%" r="100%">
+      <stop offset="0" stop-color="#16224A"/>
+      <stop offset="1" stop-color="#04060F"/>
+    </radialGradient>
+    <radialGradient id="core" cx="38%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#CFF6FF"/>
+      <stop offset=".45" stop-color="#4FD8FF"/>
+      <stop offset="1" stop-color="#0B3A66"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <circle cx="256" cy="256" r="118" fill="url(#core)"/>
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#4FD8FF" stroke-opacity=".55" stroke-width="10"
+          stroke-dasharray="250 754" transform="rotate(-40 256 256)"/>
+  <circle cx="256" cy="256" r="72" fill="none" stroke="#FFFFFF" stroke-opacity=".85" stroke-width="12"/>
+</svg>

@@ -65,12 +65,65 @@ Değişiklikten sonra uygulamayı kapatıp aç.
 | Dosya | İçerik |
 |---|---|
 | `ASISTAN.md` | Asistanın kuralları ve kişiliği (düzenleyebilirsin) |
+| `cagan.md` | Cuba'nın senin hakkında öğrendikleri, bölüm bölüm (Tercihler, Projeler, İnsanlar…) |
+| `gunluk\YYYY-MM-DD.md` | Her günün günlüğü: ne istendi, ne yapıldı, ne yarım kaldı |
 | `gorevler.md` | Görevler (`- [ ]` / `- [x]`) |
 | `takvim.md` | `## YYYY-MM-DD` altında randevular |
 | `notlar.md` | Notlar |
 | `hatirlatmalar.json` | Hatırlatma kayıtları |
 
-Hepsi düz metin; elle de düzenleyebilirsin.
+Hepsi düz metin; elle de düzenleyebilirsin — en kolayı panodaki **Hafıza** sekmesi.
+
+Cuba'yla her konuşma (sesli ya da Telegram) `data\konusmalar\` altına günlük olarak yazılır.
+Gün bitince Cuba o günün günlüğünü yazar, senin hakkında yeni öğrendiklerini `cagan.md`'nin
+uygun bölümüne ekler (hiçbir şeyi silmez) ve ertesi gün konuşmaya dünün sayfasını hatırlayarak başlar.
+Hafıza sekmesindeki **Bugünü şimdi yaz** günü beklemeden yazdırır.
+
+## Projeler ve toplantılar
+
+Her projenin kendi terminali var: Cuba'ya "BalBal'a şunu ekle" deyip ardından "Portfolyo'da
+şuna bak" dersen iki ekip aynı anda çalışır, biri ötekini durdurmaz. Proje listesinde çalışan
+projelerin noktası mor yanıp söner; ofis o an açık olan projenin ekibini gösterir, **Akış**
+sekmesi hepsini.
+
+Bir işi iki ya da daha fazla alt ajan yaptıysa ekip iş bitince toplanır. Toplantı Gemini'de
+yazılır (Claude token'ı harcamaz): ajanlar birbirine adıyla cevap verir, itirazı kime
+yapıldıysa o yanıtlar, anlaşınca biter. Kararlar konuşmaya ve panoya düşer; önerilen işleri
+Cuba sana sorar.
+
+Ofiste yazıcıya (raporlar), panoya (görünüm değiştirir: görevler, ajanlar, token, kararlar),
+saate (hafıza), kitaplığa (proje belgeleri) ve toplantı masasına (akış) tıklayabilirsin.
+Başlıktaki **Token · bugün** bugün harcanan Claude (bu bilgisayardaki tüm Claude Code
+oturumları) ve Gemini token'ını gösterir.
+
+## "Cuba" de, dinlesin
+
+Ses panelindeki **“Cuba” de** düğmesini açarsan küreye dokunmana gerek kalmaz: "Cuba" demen
+yeterli. Bir buçuk dakika kimse konuşmazsa uykuya döner. Chrome ya da Edge gerekir; ad
+tanıma tarayıcının kendi konuşma tanımasıyla yapılır (sesi Google/Microsoft'a gider).
+
+## Telefondan
+
+**Canlı konuşma (Tailscale).** Bilgisayar evde açık kalır, telefon mikrofon ve hoparlör olur.
+
+1. Bilgisayara ve telefona [Tailscale](https://tailscale.com/download) kur, ikisinde de aynı hesapla gir.
+2. Bilgisayarda bir kez: `tailscale serve --bg 8765`
+3. Cuba'yı yeniden başlat; pencerede `Telefondan: https://<bilgisayar>.<ağ>.ts.net` yazar.
+4. Telefonda o adresi Chrome/Safari ile aç, **Ana ekrana ekle** de. Küreye dokun, konuş.
+
+Adres yalnızca senin Tailscale cihazlarından açılır; internete açık değildir. Tailscale adı
+kendiliğinden bulunmazsa `config.json`'a `"remote_hosts": ["pc.agin.ts.net"]` yaz.
+
+**Telegram (yazı, sesli mesaj, bildirim, onay).**
+
+1. Telegram'da @BotFather'a `/newbot` yaz, verdiği token'ı al.
+2. `data\telegram.json` dosyası oluştur: `{"token": "123456:ABC..."}`
+3. Cuba'yı yeniden başlat. Pencerede ve sayfada bir eşleme kodu çıkar; bota `/esle <kod>` yaz.
+
+Bundan sonra bot yalnızca sana cevap verir. Yazabilir ya da sesli mesaj atabilirsin; Cuba
+aynı araçlarla iş verir. Sen ekran başında değilken (ya da uzak moddayken) biten işler,
+toplantı kararları ve **Evet/Hayır düğmeli** onay soruları telefonuna gelir.
+Komutlar: `/durum`, `/uzak` (uzak modu aç-kapa), `/dur` (terminali durdur).
 
 ## Hatırlatmalar
 
@@ -86,11 +139,14 @@ D:\ClaudeSes\.venv\Scripts\python.exe D:\ClaudeSes\tools\reminder.py delete <id>
 
 ## Gizlilik
 
-- Ses kaydın bilgisayardan çıkmaz; yazıya dökme yerel Whisper ile yapılır.
-- Söylediklerinin yazısı ve asistanın okuduğu dosyalar Claude'a (Anthropic) gider.
+- Canlı konuşmada (varsayılan) sesin Gemini Live'a (Google) gider; klasik modda ses
+  bilgisayardan çıkmaz, yazıya dökme yerel Whisper ile yapılır.
+- Cuba'nın hafıza dosyaları, günlükler ve Telegram mesajları Gemini'ye gider; ekibe verilen
+  işler ve projen Claude'a (Anthropic) gider.
 - Seslendirilen yanıtlar ve hatırlatmalar Microsoft Edge seslendirme hizmetine gider
   (resmi olmayan erişim yolu; internet gerekir, ileride çalışmayı bırakabilir).
-- Sunucu yalnızca bu bilgisayardan (`127.0.0.1`) erişilebilir.
+- Sunucu yalnızca bu bilgisayardan (`127.0.0.1`) ve kurduysan senin Tailscale cihazlarından
+  erişilebilir. Ekip araç kurabilir (`pip`, `uv`, `npm`, `npx`, `winget`) ama paket kaldıramaz.
 - Ekip **tam yetkiyle** çalışır: Claude süreçleri izin sormadan dosya değiştirip komut
   çalıştırabilir. Plan onayı ve riskli iş sorusu talimatla sağlanır.
 

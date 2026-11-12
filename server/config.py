@@ -54,6 +54,8 @@ class Config:
     gemini_model: str = "gemini-3.5-flash-lite"
     # Gemini 2.5 takes 0 to turn thinking off; 3.x models reject the setting, so None sends nothing.
     gemini_thinking_budget: int | None = None
+    # Extra names the page may be reached under, e.g. a Tailscale name if it is not found by itself.
+    remote_hosts: tuple[str, ...] = ()
 
 
 def load_config(path: Path) -> Config:
@@ -64,6 +66,8 @@ def load_config(path: Path) -> Config:
         return Config()
     known = {f.name for f in fields(Config)}
     values = {k: v for k, v in raw.items() if k in known}
+    if "remote_hosts" in values:
+        values["remote_hosts"] = tuple(values["remote_hosts"])
     if "vocabulary" in values:
         values["vocabulary"] = tuple(values["vocabulary"])
     if "models" in values:

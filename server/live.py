@@ -21,6 +21,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
 from server.config import ROOT
+from server.usage import GEMINI
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +66,14 @@ def project_block(listing: dict) -> str:
 
 
 def live_prompt(
-    memory_dir: Path = MEMORY_DIR, now: datetime.datetime | None = None, projects: dict | None = None
+    memory_dir: Path = MEMORY_DIR, now: datetime.datetime | None = None, projects: dict | None = None,
+    diary: str = "",
 ) -> str:
     return (
         f"{PROMPT.read_text(encoding='utf-8')}\n{now_line(now or datetime.datetime.now())}\n\n"
         f"# Projeler\n{project_block(projects or {})}\n\n"
         f"# Hafıza dosyaları\n{memory_block(memory_dir)}"
+        + (f"\n\n# Son günlük sayfan\n{diary}" if diary else "")
     )
 
 
@@ -94,6 +97,51 @@ Hand = Callable[[str, str], Awaitable[None]]  # gives the terminal's Claude an i
 Keys = Callable[[str], None]  # presses keys in the terminal
 
 
+class CubaTools:
+    """What Cuba can do, wherever Çağan talks to it from: the voice, Telegram."""
+
+    def __init__(
+        self,
+        hand_over: Hand,
+        press: Keys,
+        memory_dir: Path = MEMORY_DIR,
+        runner: Callable = run_program,
+        projects: Callable[[], dict] = dict,
+    ) -> None:
+        self._hand_over = hand_over
+        self._press = press
+        self.memory_dir = memory_dir
+        self._runner = runner
+        self.projects = projects  # the project listing, as the browser gets it
+
+    async def run(self, name: str, args: dict) -> dict:
+        try:
+            if name == "komut":
+                return await self._runner(str(args.get("program", "")), [str(a) for a in args.get("args", [])])
+            if name == "dosya_yaz" and args.get("ad") in MEMORY_FILES:
+                self.memory_dir.mkdir(parents=True, exist_ok=True)
+                (self.memory_dir / args["ad"]).write_text(str(args.get("icerik", "")), encoding="utf-8")
+                return {"ok": True}
+            if name == "terminale_ver" and str(args.get("talimat", "")).strip():
+                listing = self.projects()
+                folder = find_project(listing, str(args.get("proje", "")))
+                if folder is None:
+                    names = ", ".join(p["name"] for p in listing.get("projects", []))
+                    return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
+                await self._hand_over(str(args["talimat"]).strip(), folder)
+                return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+            if name == "terminal_tus" and args.get("tus") in TERMINAL_KEYS:
+                self._press(TERMINAL_KEYS[args["tus"]])
+                return {"ok": True}
+        except Exception as error:  # noqa: BLE001 - a failed tool is reported to Cuba, not raised
+            logger.exception("cuba tool %s failed", name)
+            return {"error": str(error)}
+        return {"error": f"Bilinmeyen araç ya da eksik bilgi: {name}"}
+
+    def prompt(self, diary: str = "") -> str:
+        return live_prompt(self.memory_dir, projects=self.projects(), diary=diary)
+
+
 class LiveHub:
     """At most one live conversation: the browser tab that has the microphone."""
 
@@ -108,6 +156,8 @@ class LiveHub:
         memory_dir: Path = MEMORY_DIR,
         runner: Callable = run_program,
         projects: Callable[[], dict] = dict,
+        heard: Callable[[str, str], None] | None = None,
+        diary: Callable[[], str] = str,
     ) -> None:
         self._key = api_key
         self._model = model
@@ -118,6 +168,10 @@ class LiveHub:
         self._memory_dir = memory_dir
         self._runner = runner
         self._projects = projects  # the project listing, as the browser gets it
+        self.tools = CubaTools(hand_over, press, memory_dir, runner, projects)
+        self._heard = heard  # gets each finished line: ("Çağan" | "Cuba", text)
+        self._diary = diary  # yesterday's diary page, so Cuba remembers it
+        self._said = {"Çağan": "", "Cuba": ""}  # the current turn's words, coming in pieces
         self._google = None  # the open Google session
         self._browser: WebSocket | None = None
         self._handle = ""  # lets a dropped session resume where it was
@@ -180,7 +234,7 @@ class LiveHub:
                 "responseModalities": ["AUDIO"],
                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": self._voice}}},
             },
-            "systemInstruction": {"parts": [{"text": live_prompt(self._memory_dir, projects=self._projects())}]},
+            "systemInstruction": {"parts": [{"text": self.tools.prompt(self._diary())}]},
             "tools": LIVE_TOOLS,
             "inputAudioTranscription": {},
             "outputAudioTranscription": {},
@@ -225,6 +279,7 @@ class LiveHub:
             if update := message.get("sessionResumptionUpdate"):
                 if update.get("resumable") and update.get("newHandle"):
                     self._handle = update["newHandle"]
+            GEMINI.add(message.get("usageMetadata"))
             if "goAway" in message:
                 return  # the session is about to end; reconnect with the handle
             if call := message.get("toolCall"):
@@ -236,12 +291,15 @@ class LiveHub:
                 if data := part.get("inlineData", {}).get("data"):
                     await self._audio(base64.b64decode(data))
             if text := content.get("inputTranscription", {}).get("text"):
+                self._said["Çağan"] += text
                 await self._event({"type": "user", "text": text})
             if text := content.get("outputTranscription", {}).get("text"):
+                self._said["Cuba"] += text
                 await self._event({"type": "cuba", "text": text})
             if content.get("interrupted"):
                 await self._event({"type": "interrupted"})
             if content.get("turnComplete"):
+                self._log_turn()
                 await self._event({"type": "turn_complete"})
 
     async def _run_tools(self, google, calls: list[dict]) -> None:
@@ -253,28 +311,13 @@ class LiveHub:
         await google.send(json.dumps({"toolResponse": {"functionResponses": replies}}, ensure_ascii=False))
 
     async def _tool(self, name: str, args: dict) -> dict:
-        try:
-            if name == "komut":
-                return await self._runner(str(args.get("program", "")), [str(a) for a in args.get("args", [])])
-            if name == "dosya_yaz" and args.get("ad") in MEMORY_FILES:
-                self._memory_dir.mkdir(parents=True, exist_ok=True)
-                (self._memory_dir / args["ad"]).write_text(str(args.get("icerik", "")), encoding="utf-8")
-                return {"ok": True}
-            if name == "terminale_ver" and str(args.get("talimat", "")).strip():
-                listing = self._projects()
-                folder = find_project(listing, str(args.get("proje", "")))
-                if folder is None:
-                    names = ", ".join(p["name"] for p in listing.get("projects", []))
-                    return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
-                await self._hand_over(str(args["talimat"]).strip(), folder)
-                return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
-            if name == "terminal_tus" and args.get("tus") in TERMINAL_KEYS:
-                self._press(TERMINAL_KEYS[args["tus"]])
-                return {"ok": True}
-        except Exception as error:  # noqa: BLE001 - a failed tool is reported to Cuba, not raised
-            logger.exception("live tool %s failed", name)
-            return {"error": str(error)}
-        return {"error": f"Bilinmeyen araç ya da eksik bilgi: {name}"}
+        return await self.tools.run(name, args)
+
+    def _log_turn(self) -> None:
+        for who, text in self._said.items():
+            if text.strip() and self._heard is not None:
+                self._heard(who, text)
+        self._said = {"Çağan": "", "Cuba": ""}
 
     async def _audio(self, pcm: bytes) -> None:
         if self._browser is not None:

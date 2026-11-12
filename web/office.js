@@ -303,8 +303,19 @@ function describe(agent, spot, snapshot) {
 
 // ── Drawing ─────────────────────────────────────────────────
 
-/** Draw the office on *canvas*; returns update(snapshot), select(id), where(agent), color(id). */
-export function createOffice(canvas, onSelect) {
+// Things in the office that open something when clicked: [id, plan x, y, height, what it does].
+const OBJECTS = [
+  ['printer', 716, 220, 40, 'Çıktılar: ekibin raporları'],
+  ['board', 470, 20, 96, 'Pano: görünümü değiştir'],
+  ['clock', 282, 22, 92, 'Takvim ve hafıza'],
+  ['shelf', 105, 34, 62, 'Proje belgeleri'],
+  ['table', 490, 140, 30, 'Akış: kim ne dedi'],
+];
+// What the board on the meeting room wall shows; clicking it moves to the next.
+const BOARD_MODES = ['GÖREV PANOSU', 'AJANLAR', 'TOKEN · BUGÜN', 'SON KARARLAR'];
+
+/** Draw the office on *canvas*; returns update(snapshot), select(id), where(agent), color(id) and more. */
+export function createOffice(canvas, onSelect, onObject = () => {}) {
   const ctx = canvas.getContext('2d');
   const fixed = furniture();
   const after = fixed.map((a, i) => fixed.flatMap((b, j) => (i !== j && behind(a, b) === true ? [j] : [])));
@@ -324,6 +335,10 @@ export function createOffice(canvas, onSelect) {
   let lastFrame = 0;
   let dirty = true;
   let printedAt = -Infinity;
+  let boardMode = 0;
+  let usage = null; // today's tokens: { claude: {input, output, cache}, gemini: {input, output} }
+  let decisions = []; // what the last meeting decided
+  let objectHits = []; // [id, x, y, radius] on screen, from the last draw
 
   function spotOf(agent, snapshot) {
     // Sent somewhere by name: a person goes there and stays until sent back.
@@ -663,6 +678,7 @@ export function createOffice(canvas, onSelect) {
       if (lines.length > 3) lines[2] = `${lines[2].slice(0, -1)}…`;
       return lines;
     };
+    objectHits = OBJECTS.map(([id, x, y, z]) => [id, ...onScreen(iso(x, y, z)), Math.max(14, 30 * scale)]);
     // The board and clock hang on the wall, behind whatever people say.
     drawBoard(onScreen);
     drawClock(onScreen);
@@ -688,6 +704,19 @@ export function createOffice(canvas, onSelect) {
   /** The meeting room's screen doubles as the team's board: who is on what. */
   function boardLines() {
     if (!latest) return [];
+    const mode = BOARD_MODES[boardMode];
+    if (mode === 'AJANLAR') {
+      return latest.agents.filter((a) => a.id !== 'cagan')
+        .map((a) => `${a.state === 'working' ? '▶' : a.state === 'error' ? '!' : '·'} ${PEOPLE[a.id]?.short ?? a.name}: ${a.activity || (a.state === 'idle' ? 'boşta' : a.state)}`);
+    }
+    if (mode === 'TOKEN · BUGÜN') {
+      if (!usage) return ['Ölçülüyor…'];
+      const k = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
+      return [`Claude  giriş ${k(usage.claude.input)} · çıkış ${k(usage.claude.output)}`,
+        `Claude  önbellek ${k(usage.claude.cache)}`,
+        `Gemini  giriş ${k(usage.gemini.input)} · çıkış ${k(usage.gemini.output)}`];
+    }
+    if (mode === 'SON KARARLAR') return decisions.length ? decisions.slice(-3).map((d) => `✓ ${d}`) : ['Henüz toplantı yok'];
     const open = (latest.tasks ?? []).filter((t) => ['running', 'queued', 'proposed'].includes(t.status));
     const names = Object.fromEntries(latest.agents.map((a) => [a.id, a.name]));
     const mark = { running: '▶', queued: '…', proposed: '?' };
@@ -713,7 +742,7 @@ export function createOffice(canvas, onSelect) {
     ctx.textAlign = 'left';
     ctx.fillStyle = NEON;
     ctx.font = '600 10px Bahnschrift, "Segoe UI", sans-serif';
-    ctx.fillText('GÖREV PANOSU', cx - width / 2 + 8, cy - height + 10);
+    ctx.fillText(`${BOARD_MODES[boardMode]}  ›`, cx - width / 2 + 8, cy - height + 10);
     ctx.fillStyle = '#EDF0EE';
     ctx.font = '10.5px Bahnschrift, "Segoe UI", sans-serif';
     lines.forEach((line, i) => ctx.fillText(line, cx - width / 2 + 8, cy - height + 24 + i * 14));
@@ -786,6 +815,13 @@ export function createOffice(canvas, onSelect) {
     draw(time);
   }
 
+  function objectAt(event) {
+    const box = canvas.getBoundingClientRect();
+    const [x, y] = [event.clientX - box.left, event.clientY - box.top];
+    const hit = objectHits.find(([, ox, oy, r]) => Math.hypot(x - ox, y - oy) < r);
+    return hit ? OBJECTS.find(([id]) => id === hit[0]) : null;
+  }
+
   function personAt(event) {
     const box = canvas.getBoundingClientRect();
     const [x, y] = [event.clientX - box.left, event.clientY - box.top];
@@ -801,7 +837,12 @@ export function createOffice(canvas, onSelect) {
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!drag) { canvas.style.cursor = personAt(e) ? 'pointer' : 'grab'; return; }
+    if (!drag) {
+      const thing = !personAt(e) && objectAt(e);
+      canvas.style.cursor = personAt(e) || thing ? 'pointer' : 'grab';
+      canvas.title = thing ? thing[4] : '';
+      return;
+    }
     const [dx, dy] = [e.clientX - drag.x, e.clientY - drag.y];
     if (Math.hypot(dx, dy) > 4) drag.moved = true;
     if (!drag.moved) return;
@@ -810,7 +851,13 @@ export function createOffice(canvas, onSelect) {
     dirty = true;
   });
   canvas.addEventListener('pointerup', (e) => {
-    if (drag && !drag.moved) { const p = personAt(e); if (p) onSelect(p.id); }
+    if (drag && !drag.moved) {
+      const p = personAt(e);
+      const thing = !p && objectAt(e);
+      if (p) onSelect(p.id);
+      else if (thing?.[0] === 'board') { boardMode = (boardMode + 1) % BOARD_MODES.length; dirty = true; }
+      if (thing) onObject(thing[0]);
+    }
     drag = null;
   });
   canvas.addEventListener('pointercancel', () => { drag = null; });
@@ -858,5 +905,7 @@ export function createOffice(canvas, onSelect) {
     color(id) { return PEOPLE[id]?.color ?? '#7F8DA6'; },
     /** A report came out: the printer prints it. */
     print() { printedAt = performance.now(); dirty = true; },
+    setUsage(next) { usage = next; dirty = true; },
+    setDecisions(next) { decisions = next; dirty = true; },
   };
 }

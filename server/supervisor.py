@@ -14,6 +14,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from server.projects import project_name
 from server.terminal import spoken
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ class Supervisor:
         self.away = False
         self.turns = 0
         self._away_from = 0  # where the outputs written while away begin
-        self.goal = ""
+        self.goals: dict[str, str] = {}  # each project terminal's goal, by its folder
         self.outputs: list[dict] = self._load()
 
     def state(self) -> dict:
@@ -99,7 +100,7 @@ class Supervisor:
         self._away_from = len(self.outputs)
         if not notes:
             return ""
-        lines = "\n".join(f"{o['time']}: {o['summary']}" for o in notes)
+        lines = "\n".join(f"{o['time']} {o.get('project', '')}: {o['summary']}" for o in notes)
         if self._ask is not None:
             try:
                 text = (await self._ask(DIGEST_PROMPT, lines, False)).strip()
@@ -109,37 +110,47 @@ class Supervisor:
                 logger.exception("digest failed")
         return "Hoş geldiniz efendim. " + " ".join(o["summary"] for o in notes)
 
-    def note_prompt(self, text: str) -> None:
+    @property
+    def goal(self) -> str:
+        """The latest goal given to any terminal."""
+        return next(reversed(self.goals.values()), "")
+
+    def note_prompt(self, text: str, folder: str = "") -> None:
         """Whatever the user asks Claude for is the goal Cuba holds it to."""
         if text.strip():
-            self.goal = text.strip()
+            self.goals.pop(folder, None)
+            self.goals[folder] = text.strip()
             self.turns = 0
 
-    async def on_stop(self, report: str) -> dict:
+    async def on_stop(self, report: str, folder: str = "") -> dict:
         """What to do with Claude's answer: {"speak": text} or {"continue_with": instruction}."""
         if not self.away:
             if is_brief(report):
                 return {"speak": spoken(report)}
             summary = await self._summary(report)
-            self._record(summary, report, away=False)
+            self._record(summary, report, away=False, folder=folder)
             return {"speak": summary}
         if self.turns >= self.max_turns:
-            self._record(f"{self.max_turns} turluk sınıra ulaşıldı, iş yarıda bırakıldı.", report, away=True)
+            self._record(f"{self.max_turns} turluk sınıra ulaşıldı, iş yarıda bırakıldı.", report, away=True, folder=folder)
             return {}
-        decision = await self._decide(report)
+        decision = await self._decide(report, self.goals.get(folder, ""))
         if decision is None:
-            self._record("Karar verilemedi (Gemini'ye ulaşılamadı); ekip bekliyor.", report, away=True)
+            self._record("Karar verilemedi (Gemini'ye ulaşılamadı); ekip bekliyor.", report, away=True, folder=folder)
             return {}
-        self._record(decision["ozet"], report, away=True, done=decision["bitti"])
+        self._record(decision["ozet"], report, away=True, done=decision["bitti"], folder=folder)
         if decision["bitti"] or not decision["talimat"]:
             return {}
         self.turns += 1
         return {"continue_with": decision["talimat"]}
 
-    def note_report(self, report: str) -> None:
+    def note_report(self, report: str, folder: str = "") -> None:
         """Keep a report Cuba relays live; the outputs list shows its opening."""
         if not is_brief(report):
-            self._record(spoken(report), report, away=False)
+            self._record(spoken(report), report, away=False, folder=folder)
+
+    def note_meeting(self, summary: str, transcript: str, folder: str = "") -> None:
+        """Keep what a team meeting decided, with all that was said."""
+        self._record(f"Toplantı: {summary}", transcript, away=self.away, folder=folder, kind="meeting")
 
     async def _summary(self, report: str) -> str:
         if self._ask is not None and report.strip():
@@ -151,11 +162,11 @@ class Supervisor:
                 logger.exception("summary failed")
         return spoken(report)
 
-    async def _decide(self, report: str) -> dict | None:
+    async def _decide(self, report: str, goal: str = "") -> dict | None:
         if self._ask is None:
             return None
         try:
-            raw = await self._ask(AWAY_PROMPT.format(goal=self.goal or "(belirtilmedi)"), report[-REPORT_CHARS:], True)
+            raw = await self._ask(AWAY_PROMPT.format(goal=goal or self.goal or "(belirtilmedi)"), report[-REPORT_CHARS:], True)
             data = json.loads(raw)
             return {
                 "bitti": bool(data.get("bitti")),
@@ -166,10 +177,14 @@ class Supervisor:
             logger.exception("away decision failed")
             return None
 
-    def _record(self, summary: str, report: str, away: bool, done: bool = False) -> None:
+    def _record(
+        self, summary: str, report: str, away: bool, done: bool = False, folder: str = "", kind: str = "report"
+    ) -> None:
         self.outputs.append({
             "time": self._clock().strftime("%Y-%m-%d %H:%M"),
-            "goal": self.goal,
+            "project": project_name(folder) if folder else "",
+            "kind": kind,
+            "goal": self.goals.get(folder, self.goal),
             "summary": summary,
             "report": report,
             "away": away,
