@@ -30,19 +30,19 @@ function windowColor(hour = new Date().getHours()) {
 
 const PEOPLE = {
   lider:       { short: 'Cuba',        color: '#FFB547', hair: '#2B211B', desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
-  kidemli:     { short: 'Kıdemli',     color: '#FF5FA2', hair: '#4A3426', desk: [145, 516], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
-  gelistirici: { short: 'Geliştirici', color: '#4C9BFF', hair: '#1F1B18', desk: [375, 516], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
-  testci:      { short: 'Testçi',      color: '#39E09B', hair: '#6B4A2E', desk: [810, 162], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
-  asistan:     { short: 'Asistan',     color: '#FF8A3D', hair: '#3A2A20', desk: [650, 510], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
+  kidemli:     { short: 'Kıdemli',     color: '#FF5FA2', hair: '#4A3426', desk: [120, 488], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
+  gelistirici: { short: 'Geliştirici', color: '#4C9BFF', hair: '#1F1B18', desk: [240, 488], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
+  testci:      { short: 'Testçi',      color: '#39E09B', hair: '#6B4A2E', desk: [360, 488], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
+  asistan:     { short: 'Asistan',     color: '#FF8A3D', hair: '#3A2A20', desk: [480, 488], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
   // The boss: not in the team's snapshots, so the office adds him itself.
   cagan:       { short: 'Çağan',       color: '#C9D6EE', hair: '#241C17', desk: [255, 110], meeting: [614, 140], coffee: [1150, 160], sofa: [1000, 465], visit: [255, 110] },
 };
 // The four empty desks new hires take, in order: where they sit, meet, drink coffee, rest, visit.
 const HIRE_SLOTS = [
-  { color: '#B07CFF', hair: '#2A1E16', desk: [445, 676], meeting: [490, 72],  coffee: [990, 130],  sofa: [960, 600],  visit: [45, 190] },
-  { color: '#FFE066', hair: '#5A3A22', desk: [130, 656], meeting: [490, 210], coffee: [1045, 130], sofa: [1030, 560], visit: [280, 190] },
-  { color: '#5CE1E6', hair: '#1B1612', desk: [800, 246], meeting: [340, 210], coffee: [1100, 140], sofa: [880, 640],  visit: [140, 262] },
-  { color: '#FF6B6B', hair: '#3B2A1F', desk: [640, 620], meeting: [640, 210], coffee: [1000, 300], sofa: [1090, 500], visit: [190, 262] },
+  { color: '#B07CFF', hair: '#2A1E16', desk: [120, 623], meeting: [490, 72],  coffee: [990, 130],  sofa: [960, 600],  visit: [45, 190] },
+  { color: '#FFE066', hair: '#5A3A22', desk: [240, 623], meeting: [490, 210], coffee: [1045, 130], sofa: [1030, 560], visit: [280, 190] },
+  { color: '#5CE1E6', hair: '#1B1612', desk: [360, 623], meeting: [340, 210], coffee: [1100, 140], sofa: [880, 640],  visit: [140, 262] },
+  { color: '#FF6B6B', hair: '#3B2A1F', desk: [480, 623], meeting: [640, 210], coffee: [860, 120],  sofa: [1090, 500], visit: [190, 262] },
 ];
 // Spots where one stands; everywhere else there is a seat.
 const STANDING = new Set([
@@ -56,26 +56,24 @@ const BOSS = { id: 'cagan', name: 'Çağan', state: 'idle', activity: '', second
 // sign: where the room's name is painted: high on the back wall behind it
 // ('north' at x, 'west' at y), or on a clear patch of floor.
 const ROOMS = [
-  { name: 'Yönetim',        x: 20,  y: 20,  w: 280, h: 250, floor: 'wood',    sign: ['north', 40],       door: [[165, 255], [165, 310]] },
-  { name: 'Toplantı odası', x: 300, y: 20,  w: 380, h: 250, floor: '#152038', sign: ['north', 318],      door: [[490, 255], [490, 310]] },
-  { name: 'Kalite',         x: 680, y: 20,  w: 260, h: 250, floor: '#11262A', sign: ['north', 698],      door: [[815, 255], [815, 310]] },
-  { name: 'Mutfak',         x: 940, y: 20,  w: 240, h: 330, floor: 'tile',    sign: ['north', 958],      door: [[960, 310], [920, 310]] },
-  { name: '',               x: 20,  y: 270, w: 920, h: 80,  floor: '#0F1828', sign: null,                door: null },
-  { name: 'Mühendislik',    x: 20,  y: 350, w: 500, h: 350, floor: '#131D34', sign: ['west', 684],       door: [[270, 368], [270, 310]] },
-  { name: 'Destek',         x: 520, y: 350, w: 260, h: 350, floor: '#1E1A30', sign: ['floor', 596, 580], door: [[655, 368], [655, 310]] },
-  { name: 'Dinlenme',       x: 780, y: 350, w: 400, h: 350, floor: '#181834', sign: ['floor', 880, 676], door: [[850, 368], [850, 310]] },
+  { name: 'Yönetim',        x: 20,  y: 20,  w: 280,  h: 250, floor: 'wood',    sign: ['north', 40],  door: [[165, 255], [165, 310]] },
+  { name: 'Toplantı odası', x: 300, y: 20,  w: 400,  h: 250, floor: '#152038', sign: ['north', 318], door: [[490, 255], [490, 310]] },
+  { name: 'Mutfak',         x: 700, y: 20,  w: 480,  h: 250, floor: 'tile',    sign: ['north', 718], door: [[940, 255], [940, 310]] },
+  { name: '',               x: 20,  y: 270, w: 1160, h: 80,  floor: '#0F1828', sign: null,          door: null },
+  // One open room: engineering desks on the left, the lounge on the right.
+  { name: 'Mühendislik',    x: 20,  y: 350, w: 1160, h: 350, floor: '#131D34', sign: ['west', 684], door: [[600, 368], [600, 310]] },
+  // Not a room of its own: the lounge's part of the floor, with its own colour and name.
+  { name: 'Dinlenme',       x: 760, y: 350, w: 420,  h: 350, floor: '#181834', sign: ['floor', 880, 676], door: null, zone: true },
 ];
-const KITCHEN_TO_LOUNGE = [[1070, 332], [1070, 368]];
 
 // [x1, y1, x2, y2, height]; the gaps between them are the doors.
 const TALL = 112, LOW = 28, CUT = 9;
 const WALLS = [
   [20, 20, 1180, 20, TALL], [20, 20, 20, 285, TALL], [20, 335, 20, 700, TALL],
   [1180, 20, 1180, 700, CUT], [20, 700, 1180, 700, CUT],
-  [20, 270, 140, 270, LOW], [190, 270, 460, 270, LOW], [520, 270, 790, 270, LOW], [840, 270, 940, 270, LOW],
-  [20, 350, 240, 350, LOW], [300, 350, 630, 350, LOW], [680, 350, 820, 350, LOW], [880, 350, 1040, 350, LOW], [1100, 350, 1180, 350, LOW],
-  [300, 20, 300, 270, LOW], [680, 20, 680, 270, LOW], [940, 20, 940, 285, LOW], [940, 335, 940, 350, LOW],
-  [520, 350, 520, 700, LOW], [780, 350, 780, 700, LOW],
+  [20, 270, 140, 270, LOW], [190, 270, 460, 270, LOW], [520, 270, 910, 270, LOW], [970, 270, 1180, 270, LOW],
+  [20, 350, 570, 350, LOW], [630, 350, 920, 350, LOW], [980, 350, 1180, 350, LOW],
+  [300, 20, 300, 270, LOW], [700, 20, 700, 270, LOW],
 ];
 
 const iso = (x, y, z = 0) => [(x - y) * COS, (x + y) * SIN - z];
@@ -138,11 +136,8 @@ function furniture() {
   north.decor = [
     { face: 'south', a0: 190, a1: 262, z0: 34, z1: 78, color: glass },                       // Yönetim window
     { face: 'south', a0: 405, a1: 535, z0: 36, z1: 80, color: '#081020', lit: 'wallScreen' }, // meeting room screen
-    { face: 'south', a0: 684, a1: 790, z0: 38, z1: 76, color: '#CFE9FF' },                   // Kalite board
-    { face: 'south', a0: 692, a1: 718, z0: 56, z1: 70, color: '#39E09B' },
-    { face: 'south', a0: 724, a1: 750, z0: 56, z1: 70, color: '#FFB547' },
-    { face: 'south', a0: 756, a1: 782, z0: 56, z1: 70, color: '#FF4D5E' },
-    { face: 'south', a0: 830, a1: 905, z0: 34, z1: 78, color: glass },
+    { face: 'south', a0: 740, a1: 820, z0: 34, z1: 78, color: glass },                       // kitchen windows
+    { face: 'south', a0: 840, a1: 920, z0: 34, z1: 78, color: glass },
     { face: 'south', a0: 980, a1: 1140, z0: 52, z1: 82, color: glass },                      // above the counter
   ];
   west[0].decor = [{ face: 'east', a0: 70, a1: 170, z0: 34, z1: 76, color: '#CFE9FF' }];     // Yönetim whiteboard
@@ -163,21 +158,6 @@ function furniture() {
   box(390, 105, 200, 70, 24, '#33415E', { table: true });
   plant(322, 44); plant(656, 246);
 
-  // Kalite
-  desk('testci', 735, 82, 150, 58, 2);
-  chair(810, 162);
-  const rack = box(898, 60, 30, 150, 70, '#1A2236');
-  rack.decor = [0, 1, 2, 3].flatMap((i) => [
-    { face: 'east', a0: 10 + i * 36, a1: 34 + i * 36, z0: 10, z1: 60, color: '#081020' },
-    { face: 'east', a0: 26 + i * 36, a1: 30 + i * 36, z0: 50, z1: 54, color: i % 2 ? '#39E09B' : '#FFB547' },
-  ]);
-  plant(916, 244);
-  box(745, 190, 110, 40, 24, '#33415E');
-  box(778, 196, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot2' });
-  chair(800, 246);
-  // Reports come out here.
-  box(698, 206, 36, 28, 30, '#3A4766', { printer: true });
-
   // Mutfak
   box(948, 26, 224, 36, 30, '#2A3550');
   box(962, 32, 38, 24, 20, '#0B111C', { z0: 30 });                        // coffee machine
@@ -185,9 +165,13 @@ function furniture() {
   box(1066, 34, 44, 22, 1, '#4A5A7A', { z0: 30 });                        // sink
   box(1122, 34, 40, 22, 1.5, '#141B2B', { z0: 30 });                      // hob
   box(1138, 80, 36, 54, 66, '#3A4766');                                   // fridge
-  for (const [x, y] of [[1016, 222], [1108, 222], [1062, 270]]) cyl(x, y, 9, 16, '#24304A');
+  for (const [x, y] of [[1016, 222], [1108, 222], [1062, 176]]) cyl(x, y, 9, 16, '#24304A');
   cyl(1062, 222, 27, 28, '#33415E');
   cyl(1054, 216, 4.5, 7, '#9FB3D1', { z0: 28 }); cyl(1072, 228, 4.5, 7, '#9FB3D1', { z0: 28 });
+  // The bigger kitchen: a standing table by the windows.
+  cyl(800, 150, 24, 34, '#33415E');
+  cyl(793, 146, 4.5, 7, '#9FB3D1', { z0: 34 });
+  plant(722, 46, 1.1); plant(724, 248);
   plant(1120, 326);
   box(1150, 292, 22, 38, 26, '#1A2236');                                  // bin
 
@@ -196,31 +180,21 @@ function furniture() {
   cyl(891, 287, 7, 16, '#4FD8FF', { z0: 34 });
   plant(560, 288, .85);
 
-  // Mühendislik
+  // Mühendislik: two rows of desks side by side; the back row waits for new hires.
   books(box(40, 358, 100, 16, 46, '#1E2840'), 100, 8);
-  desk('kidemli', 65, 432, 160, 62, 2);
-  desk('gelistirici', 295, 432, 160, 62);
-  chair(145, 516); chair(375, 516);
-  // Desks waiting for new hires; a screen lights up once someone sits there.
-  box(400, 600, 90, 60, 24, '#33415E');
-  box(423, 610, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot0' });
-  chair(445, 676);
-  box(70, 590, 120, 50, 24, '#33415E');
-  box(108, 598, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot1' });
-  chair(130, 656);
-  plant(492, 380, 1.1); plant(496, 674, 1.1);
-
-  // Destek
-  desk('asistan', 575, 430, 150, 58);
-  chair(650, 510);
-  box(585, 560, 110, 45, 24, '#33415E');
-  box(618, 566, 44, 4, 24, '#0B111C', { z0: 24, screen: 'slot3' });
-  chair(640, 620);
-  const cabinets = box(536, 600, 46, 84, 42, '#2C3A52');
+  const row = (owners, y) => owners.forEach((owner, i) => {
+    desk(owner, 60 + i * 120, y, 116, 55);
+    chair(120 + i * 120, y + 78);
+  });
+  row(['kidemli', 'gelistirici', 'testci', 'asistan'], 410);
+  // A screen lights up once someone takes the desk.
+  row(['slot0', 'slot1', 'slot2', 'slot3'], 545);
+  // Reports come out here.
+  box(582, 410, 36, 28, 30, '#3A4766', { printer: true });
+  const cabinets = box(580, 560, 46, 84, 42, '#2C3A52');
   cabinets.decor = [0, 1, 2].map((i) => ({ face: 'east', a0: 4 + i * 27, a1: 26 + i * 27, z0: 6, z1: 36, color: '#3E4E6E' }));
-  box(700, 640, 60, 44, 22, '#33415E');
-  box(706, 646, 48, 32, 14, '#4A5A7A', { z0: 22 });                       // printer
-  plant(756, 378);
+  // Plants mark where work ends and the lounge begins.
+  plant(728, 400, 1.1); plant(728, 500, 1.1); plant(728, 600, 1.1);
 
   // Dinlenme
   box(792, 430, 12, 190, 32, '#2B3F6B'); box(804, 430, 38, 190, 14, '#3D5A94');   // sofa by the wall
@@ -279,18 +253,13 @@ function paintOrder(fixed, after, people) {
 
 // ── Getting from one place to another ───────────────────────
 
-const roomOf = ([x, y]) => ROOMS.find((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+const roomOf = ([x, y]) => ROOMS.find((r) => !r.zone && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
 
 /** The corners to walk through from *from* to *to*: out of one door, along the corridor, in at the other. */
 function route(from, to) {
   const a = roomOf(from);
   const b = roomOf(to);
   if (!a || !b || a === b) return [to];
-  const pair = new Set([a.name, b.name]);
-  if (pair.has('Mutfak') && pair.has('Dinlenme')) {
-    const through = a.name === 'Mutfak' ? KITCHEN_TO_LOUNGE : [...KITCHEN_TO_LOUNGE].reverse();
-    return [...through, to];
-  }
   const out = a.door ? [a.door[0], a.door[1]] : [];
   const into = b.door ? [b.door[1], b.door[0]] : [];
   return [...out, ...into, to];
@@ -324,7 +293,7 @@ function describe(agent, spot, snapshot) {
 
 // Things in the office that open something when clicked: [id, plan x, y, height, what it does].
 const OBJECTS = [
-  ['printer', 716, 220, 40, 'Çıktılar: ekibin raporları'],
+  ['printer', 600, 424, 40, 'Çıktılar: ekibin raporları'],
   ['board', 470, 20, 96, 'Pano: görünümü değiştir'],
   ['clock', 282, 22, 92, 'Takvim ve hafıza'],
   ['shelf', 105, 34, 62, 'Proje belgeleri'],
@@ -600,7 +569,7 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
       ctx.strokeStyle = `${color}33`; ctx.lineWidth = 1; ctx.strokeRect(x + 16, y + 16, w - 32, h - 32);
     };
     pad(60, 164, 210, 92, '#FFB547');
-    pad(60, 540, 300, 130, '#4C9BFF');
+    pad(45, 395, 515, 270, '#4C9BFF');
     pad(870, 430, 200, 150, '#5CF2BE');
     ctx.fillStyle = 'rgb(79 216 255 / .08)'; ctx.fillRect(90, 301, 780, 18);   // corridor light strip
     ctx.fillStyle = 'rgb(79 216 255 / .5)'; ctx.fillRect(90, 309, 780, 2);
@@ -733,7 +702,7 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
       if (p.code && !p.path.length) drawCode(x, above - (p.says ? 74 : 16), p);
     }
     if (performance.now() - printedAt < PRINT_MS) {
-      const [x, y] = onScreen(iso(716, 220, 60));
+      const [x, y] = onScreen(iso(600, 424, 60));
       ctx.font = '600 11px Bahnschrift, "Segoe UI", sans-serif';
       pill(x, y, '🖨 Rapor hazır', HUD, INK, NEON);
     }

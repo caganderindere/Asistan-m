@@ -7,11 +7,9 @@ Ekip: Çağan (patron), Cuba (takım lideri), Kıdemli Geliştirici, Geliştiric
 Odalar:
 - Yönetim: Cuba'nın odası. Çağan da çoğunlukla burada, Cuba'nın yanında durur.
 - Toplantı odası: büyük masa ve ekran. Toplantılar ve plan görüşmeleri burada yapılır.
-- Mühendislik: Kıdemli ve Geliştirici'nin masaları.
-- Kalite: Testçi'nin masası.
-- Destek: Asistan'ın masası.
+- Mühendislik: açık ofis. Kıdemli, Geliştirici, Testçi ve Asistan'ın masaları ön sırada yan yana; arka sıradaki dört masa işe alınanlar için.
 - Mutfak: kahve molası.
-- Dinlenme: kanepeler; boştaki kişi burada oturur.
+- Dinlenme: Mühendislik ile aynı odada, bitkilerin ötesinde kanepeler; boştaki kişi burada oturur.
 
 Kimse işi yokken masasında beklemez: boşta olan bir süre sonra mutfağa, sonra dinlenme alanına geçer; iş gelince masasına döner.
 
