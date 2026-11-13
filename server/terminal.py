@@ -61,6 +61,7 @@ def hook_settings(
             "UserPromptSubmit": hook("prompt"),
             "PreToolUse": hook("pre", "*"),
             "PostToolUse": hook("post", "|".join(AGENT_TOOLS)),
+            "SubagentStop": hook("subagent_stop"),
         },
         # Walking around the office is not worth asking Çağan about.
         "permissions": {"allow": [f"Bash({command}:*)" for command in allow]},
@@ -253,7 +254,7 @@ class TerminalCrew:
 
     def _add_desk(self, desk: str, name: str) -> None:
         self._desks[desk] = {"name": name, "state": "idle", "activity": "", "since": self._clock(), "key": "",
-                             "agent": "", "code": "", "file": "", "log": deque(maxlen=LOG_LINES)}
+                             "agent": "", "code": "", "file": "", "background": False, "log": deque(maxlen=LOG_LINES)}
 
     @property
     def _subs(self) -> list[str]:
@@ -277,7 +278,10 @@ class TerminalCrew:
             if role in self._desks and role != LEAD_DESK and self._desks[role]["state"] == "idle":
                 free = role
             if free is not None:
-                self._desks[free].update(key=use_id, agent="", name=names.get(role) or role or "Alt ajan")
+                # Started in the background, it works on after the launch returns and Cuba's turn ends.
+                background = str(tool_input.get("run_in_background", "")).lower() == "true"
+                self._desks[free].update(key=use_id, agent="", name=names.get(role) or role or "Alt ajan",
+                                         background=background)
                 self._work(free, summary or "Görevde")
             return
         desk = self._desk_of(agent)
@@ -291,10 +295,35 @@ class TerminalCrew:
         if name not in AGENT_TOOLS:
             return
         for desk_id in self._subs:
-            if self._desks[desk_id]["key"] == use_id:
+            if self._desks[desk_id]["key"] == use_id and not self._desks[desk_id]["background"]:
                 if result.strip():
                     self.reports.append({"who": desk_id, "name": self._desks[desk_id]["name"], "text": result.strip()})
                 self._rest(desk_id)
+
+    def subagent_done(self, agent: str, agent_type: str = "", result: str = "") -> None:
+        """A background member finished: its report is in and it leaves the desk."""
+        role = agent_type.rpartition(":")[2]
+        working = [d for d in self._subs if self._desks[d]["state"] == "working" and self._desks[d]["background"]]
+        desk_id = next((d for d in working if agent and self._desks[d]["agent"] == agent), None) or next(
+            (d for d in working if d == role and not self._desks[d]["agent"]), None)
+        if desk_id is None:
+            return
+        if result.strip():
+            self.reports.append({"who": desk_id, "name": self._desks[desk_id]["name"], "text": result.strip()})
+        self._rest(desk_id)
+
+    def office_work(self, desk: str, activity: str) -> None:
+        """A member on the free models is at work: shown at their own desk like any subagent."""
+        if desk in self._desks:
+            self._work(desk, activity)
+
+    def office_rest(self, desk: str) -> None:
+        if desk in self._desks:
+            self._rest(desk)
+
+    def show_meeting(self, review: dict | None) -> None:
+        """A live meeting Cuba chairs, played by the office like the team's own meetings."""
+        self.review = review
 
     @property
     def busy(self) -> bool:
@@ -303,7 +332,8 @@ class TerminalCrew:
     def stop(self) -> None:
         self.question = ""
         for desk_id in self._desks:
-            self._rest(desk_id)
+            if not self._desks[desk_id]["background"]:
+                self._rest(desk_id)
 
     def permission(self) -> None:
         self.question = "Claude onayını bekliyor."
@@ -362,4 +392,4 @@ class TerminalCrew:
         desk = self._desks[desk_id]
         if desk["state"] == "working":
             desk["since"] = self._clock()
-        desk.update(state="idle", activity="", key="", agent="", code="", file="")
+        desk.update(state="idle", activity="", key="", agent="", code="", file="", background=False)

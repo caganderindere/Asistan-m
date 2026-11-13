@@ -141,6 +141,51 @@ LIVE_TOOLS = [{"functionDeclarations": [
     },
 ]}]
 
+# The marketing team works on the free models in the office; Cuba gives it work and chairs its meetings.
+OFFICE_TOOLS = [
+    {
+        "name": "ekibe_ver",
+        "description": "Pazarlama ekibinden birine (pazarlama, icerik, sosyal) iş verir; bitince [EKİP RAPORU] gelir.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "kim": {"type": "string", "enum": ["pazarlama", "icerik", "sosyal"]},
+                "proje": {"type": "string", "description": "İşin yapılacağı projenin adı, Projeler listesinden."},
+                "talimat": {"type": "string", "description": "İşi eksiksiz anlatan tek paragraf: ürün, hedef kitle, ton, çıktı."},
+            },
+            "required": ["kim", "proje", "talimat"],
+        },
+    },
+    {
+        "name": "toplanti_ac",
+        "description": "Pazarlama ekibiyle toplantı açar; katılımcılar toplantı odasına geçer.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "konu": {"type": "string"},
+                "kisiler": {"type": "array", "items": {"type": "string", "enum": ["pazarlama", "icerik", "sosyal"]}},
+                "proje": {"type": "string", "description": "Toplantının ilgili olduğu proje; yoksa açık proje."},
+            },
+            "required": ["konu", "kisiler"],
+        },
+    },
+    {
+        "name": "soz_ver",
+        "description": "Toplantıda birine söz verir; cevabı [SÖZ — isim] olarak gelir. Onun adına konuşma.",
+        "parameters": {
+            "type": "object",
+            "properties": {"kim": {"type": "string", "enum": ["pazarlama", "icerik", "sosyal"]},
+                           "soru": {"type": "string"}},
+            "required": ["kim", "soru"],
+        },
+    },
+    {
+        "name": "toplanti_kapat",
+        "description": "Toplantıyı kapatır; kararları ve önerilen işleri döner.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+]
+LIVE_TOOLS[0]["functionDeclarations"].extend(OFFICE_TOOLS)
 
 def project_block(listing: dict) -> str:
     """The projects Cuba can hand work in, the open one marked."""
@@ -199,8 +244,10 @@ class CubaTools:
         search: Callable[[str], Awaitable[dict]] | None = None,
         notify: Callable[[dict], None] = lambda message: None,
         schedule: Schedule | None = None,
+        office=None,
     ) -> None:
         self._hand_over = hand_over
+        self.office = office  # server/office.py: the marketing team on the free models
         self.schedule = schedule
         self._press = press
         self._hire = hire
@@ -211,6 +258,25 @@ class CubaTools:
         self.memory_dir = memory_dir
         self._runner = runner
         self.projects = projects  # the project listing, as the browser gets it
+
+    async def _office(self, name: str, args: dict) -> dict:
+        if self.office is None:
+            return {"error": "Ofis ekibi çalışmıyor: OmniRoute anahtarı yok."}
+        if name == "soz_ver":
+            return await self.office.give_floor(str(args.get("kim", "")), str(args.get("soru", "")))
+        if name == "toplanti_kapat":
+            return await self.office.close_meeting()
+        listing = self.projects()
+        wanted = str(args.get("proje", "")).strip()
+        folder = find_project(listing, wanted) if wanted else listing.get("current")
+        if folder is None:
+            names = ", ".join(p["name"] for p in listing.get("projects", []))
+            return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
+        if name == "toplanti_ac":
+            return await self.office.open_meeting(str(args.get("konu", "")), [str(k) for k in args.get("kisiler", [])], folder)
+        if not str(args.get("talimat", "")).strip():
+            return {"error": "Talimat boş."}
+        return await self.office.give(str(args.get("kim", "")), str(args["talimat"]).strip(), folder)
 
     async def run(self, name: str, args: dict) -> dict:
         try:
@@ -228,6 +294,8 @@ class CubaTools:
                     return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
                 await self._hand_over(str(args["talimat"]).strip(), folder)
                 return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+            if name in ("ekibe_ver", "toplanti_ac", "soz_ver", "toplanti_kapat"):
+                return await self._office(name, args)
             if name == "hayat_kaydet" and self.life is not None and str(args.get("detay", "")).strip():
                 entry = self.life.add(str(args.get("tur", "")), str(args["detay"]), args.get("sure_dk"),
                                       str(args.get("deger") or ""))

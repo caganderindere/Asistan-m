@@ -223,6 +223,24 @@ def test_people_are_sent_around_the_office(terminal_client):
     assert bad.status_code == 400
 
 
+def test_background_member_keeps_working_until_it_stops():
+    from server.terminal import TerminalCrew
+
+    crew = TerminalCrew(clock=lambda: 0)
+    crew.tool("Agent", {"description": "Pazar araştırması", "subagent_type": "cuba-ekip:pazarlama",
+                        "run_in_background": "true"}, "t1")
+    crew.tool_done("Agent", "t1", "Async agent launched successfully.")
+    crew.stop()  # Cuba's turn ends while the member is still at work
+    crew.tool("WebSearch", {"query": "Bagger Ersatzteile"}, agent="a9")
+    desk = lambda: next(a for a in crew.snapshot()["agents"] if a["id"] == "pazarlama")
+    assert desk()["state"] == "working" and desk()["activity"].startswith("WebSearch")
+    assert crew.reports == []
+
+    crew.subagent_done("a9", "cuba-ekip:pazarlama", "Müşteri bulundu.")
+    assert desk()["state"] == "idle"
+    assert crew.reports == [{"who": "pazarlama", "name": "Pazarlamacı", "text": "Müşteri bulundu."}]
+
+
 def test_given_work_a_member_returns_to_the_desk(terminal_client):
     auth = {"x-ekip-token": TOKEN}
     terminal_client.post("/api/team/move", headers=auth, json={"who": ["testci"], "where": "sofa"})
@@ -308,3 +326,26 @@ def test_two_subagent_reports_bring_the_team_to_a_meeting(tmp_path, pty, monkeyp
     # The open project's office never showed the other project's work.
     assert not any(m["agents"][0]["state"] == "working" for m in seen
                    if m["type"] == "terminal_team" and m["project"] == str(tmp_path))
+
+
+def test_marketing_is_not_a_terminal_subagent(tmp_path):
+    from server.config import DEFAULT_MODELS
+    from server.prompts import write_terminal_team
+
+    _, plugin = write_terminal_team(tmp_path, DEFAULT_MODELS)
+    assert not (plugin / "agents" / "pazarlama.md").exists()
+    assert (plugin / "agents" / "gelistirici.md").exists()
+
+
+def test_office_work_and_meeting_show_on_crew():
+    from server.terminal import TerminalCrew
+
+    crew = TerminalCrew(clock=lambda: 0)
+    crew.office_work("icerik", "Yazıyor")
+    icerik = next(a for a in crew.snapshot()["agents"] if a["id"] == "icerik")
+    assert icerik["state"] == "working" and icerik["activity"] == "Yazıyor"
+    crew.office_rest("icerik")
+    crew.show_meeting({"members": ["icerik"], "speaker": "", "lines": [], "names": {}})
+    assert crew.snapshot()["phase"] == "review"
+    crew.show_meeting(None)
+    assert crew.review is None

@@ -36,6 +36,9 @@ from server.team import LeadTurn, MeetingEnded, Team, TeamError
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES
 from server.live import LiveHub
 from server.meeting import hold_meeting
+from server.office import Office
+from server.office_bus import OfficeBus
+from server.omni import OmniClient, load_key
 from server.memory import ConversationLog, Diary, ensure_profile
 from server.supervisor import Supervisor
 from server.terminal import (
@@ -336,6 +339,21 @@ def create_app(
         asyncio.get_running_loop().create_task(clients.send(message))
 
     app.state.notify = notify
+
+    # The office on the free models (server/office.py) reaches the page through these.
+    async def push_crew(folder: str) -> None:
+        await clients.send(crew_view(folder))
+
+    def office_said(message) -> None:
+        """A member spoke to another: into the conversation log and the feed."""
+        names = {"lider": "Cuba", **member_names()}
+        talk.add(names.get(message.sender, message.sender), message.text, "ofis")
+        asyncio.get_running_loop().create_task(clients.send({
+            "type": "office_message", "sender": message.sender, "name": names.get(message.sender, message.sender),
+            "to": message.to, "to_name": names.get(message.to, message.to), "text": message.text,
+            "channel": message.channel}))
+
+    app.state.crew_for, app.state.push_crew, app.state.office_said = crew_for, push_crew, office_said
     # Rejects DNS-rebinding requests, whose Host is the attacker's domain.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[*allowed_hosts, *remote_hosts])
     # The phone reaches the page through Tailscale's https proxy, under the machine's tailnet name.
@@ -579,6 +597,8 @@ def create_app(
                       str(body.get("use_id", "")), str(body.get("agent", "")))
         elif kind == "post":
             crew.tool_done(str(body.get("tool", "")), str(body.get("use_id", "")), str(body.get("result", "")))
+        elif kind == "subagent_stop":
+            crew.subagent_done(str(body.get("agent", "")), str(body.get("agent_type", "")), str(body.get("result", "")))
         elif kind == "permission":
             crew.permission()
             if folder not in asking:
@@ -1061,11 +1081,31 @@ def main(argv: list[str] | None = None) -> None:
         if "app" in late:
             late["app"].state.notify(message)
 
+    office = None
+    omni = OmniClient(load_key())
+    if omni.available:
+        # The marketing team on the free models; the app it reports through is made further down.
+        async def office_tell(text: str) -> None:
+            if live is not None and live.active:
+                await live.tell(text)
+            elif telegram is not None:
+                await telegram.send(text)
+
+        async def office_push(folder: str) -> None:
+            if "app" in late:
+                await late["app"].state.push_crew(folder)
+
+        bus = OfficeBus(data_dir / "ofis")
+        bus.subscribe(lambda message: late["app"].state.office_said(message) if "app" in late else None)
+        office = Office(omni, bus, lambda folder: late["app"].state.crew_for(folder), office_tell, office_push,
+                        search=search if gemini_key else None)
+
     def cuba_tools():
         from server.live import CubaTools
 
         return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire,
-                         life=life, search=search if gemini_key else None, notify=notify, schedule=schedule)
+                         life=life, search=search if gemini_key else None, notify=notify, schedule=schedule,
+                         office=office)
 
     def live_voice() -> str:
         return late["app"].state.settings()["live_voice"] if "app" in late else config.live_voice

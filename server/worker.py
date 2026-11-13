@@ -39,7 +39,7 @@ def _tool(name: str, description: str, **params: str) -> dict:
 TOOLS = [
     _tool("dosya_oku", "Projedeki bir dosyayı okur.", yol="Proje klasörüne göre yol."),
     _tool("dosya_yaz", "pazarlama/ altına bir dosyanın tamamını yazar.", yol="pazarlama/ ile başlayan yol.", icerik="Dosya içeriği."),
-    _tool("mesaj_at", "Bir ekip arkadaşına soru sorar; cevabı döner.", kime="Kimlik: pazarlama, icerik, sosyal ya da lider.",
+    _tool("mesaj_at", "Bir ekip arkadaşına soru sorar; cevabı döner.", kime="Kimlik: pazarlama, icerik ya da sosyal.",
           metin="Soru ya da mesaj."),
     _tool("rapor_ver", "İşi bitirir; metin liderin okuyacağı rapordur.", metin="Rapor."),
 ]
