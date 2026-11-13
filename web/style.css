@@ -463,6 +463,7 @@ body[data-mode="terminal"] .roster { display: none; }
 .feed-item.work p:last-child { font: 12px/1.5 var(--mono); color: #B8C7E0; }
 .feed-item.talk { background: color-mix(in srgb, var(--who) 8%, transparent); border-radius: 0 8px 8px 0; padding-right: 8px; }
 .feed-item.talk p:last-child::before { content: "“"; color: var(--who); }
+.feed-item.office p:last-child::before { content: none; }
 .feed-item.talk p:last-child::after { content: "”"; color: var(--who); }
 .feed-item.done p:last-child { color: var(--speak); }
 .feed-item.error p:last-child { color: var(--error); }

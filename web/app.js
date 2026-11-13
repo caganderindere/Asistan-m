@@ -132,16 +132,20 @@ function handle(msg) {
       if (liveAvailable) noteActivity('team', msg); else showTeam(msg);
       break;
     case 'terminal_team': {
-      // Every project has its own terminal; the office shows the open project's.
+      // Every project has its own terminal; the office shows the open project's, plus whoever works elsewhere.
       const here = !msg.project || msg.project === project;
       crewOf.set(msg.project ?? project, msg);
       noteActivity(`terminal:${msg.project}`, msg, here ? '' : projectName(msg.project));
       showHud();
-      if (here && liveAvailable) showTeam(msg);
+      if (liveAvailable) showTeam(officeView());
       break;
     }
     case 'roster':
       members = msg.members;
+      break;
+    case 'office_message':
+      // Members asking each other while they work; meeting lines are played by the office itself.
+      if (msg.channel === 'birebir') addFeed(msg.sender, msg.name, `→ ${msg.to_name}: ${msg.text}`, 'talk office');
       break;
     case 'situation':
       showSituation(msg.situation);
@@ -274,8 +278,7 @@ function showProjects({ current, projects }) {
   project = current;
   projectList = projects;
   // The terminal office follows the open project.
-  const crew = crewOf.get(current);
-  if (crew && liveAvailable) showTeam(crew);
+  if (crewOf.size && liveAvailable) showTeam(officeView());
   const open = projects.find((p) => p.path === current);
   $('workdir').textContent = open?.name ?? current;
   $('workdir').title = current;
@@ -567,6 +570,23 @@ $('meetingVoice').addEventListener('click', () => {
   showMeetingVoice();
 });
 showMeetingVoice();
+
+// One office for every project: a member at work in another project's terminal is still at their desk,
+// with that project's name on what they are doing.
+function officeView() {
+  const base = crewOf.get(project) ?? [...crewOf.values()][0];
+  const agents = new Map(base.agents.map((a) => [a.id, a]));
+  for (const [folder, crew] of crewOf) {
+    if (crew === base) continue;
+    for (const a of crew.agents) {
+      if (a.state !== 'working' || agents.get(a.id)?.state === 'working') continue;
+      agents.set(a.id, { ...a, activity: `${projectName(folder)}: ${a.activity}` });
+    }
+  }
+  const all = [...agents.values()];
+  const working = all.some((a) => a.state === 'working');
+  return { ...base, agents: all, phase: base.phase === 'idle' && working ? 'working' : base.phase };
+}
 
 function showTeam(snapshot) {
   team = snapshot;

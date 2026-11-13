@@ -83,3 +83,11 @@ async def test_floor_when_model_fails(tmp_path):
     await m.open("konu", ["pazarlama"])
     assert (await m.give_floor("pazarlama", "?")) == {"error": "Pazarlamacı cevap veremedi: Ücretsiz modellerin limiti doldu"}
     assert shown[-1]["speaker"] == ""
+
+
+async def test_close_reads_fenced_json(tmp_path):
+    fenced = '```json\n{"kararlar": ["Bayi ağı"], "gorevler": []}\n```\n'
+    m, _, _ = meeting(tmp_path, FakeOmni(fenced))
+    await m.open("konu", ["pazarlama"])
+    await m.give_floor("pazarlama", "?")
+    assert (await m.close())["kararlar"] == ["Bayi ağı"]
