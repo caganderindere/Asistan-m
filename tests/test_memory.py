@@ -61,3 +61,15 @@ async def test_a_quiet_day_gets_no_page(tmp_path):
 
     diary = Diary(tmp_path, ConversationLog(tmp_path / "talk"), ask)
     assert await diary.write("2026-11-11", []) is None
+
+
+def test_recent_keeps_the_end_of_the_day_within_budget(tmp_path):
+    from server.memory import ConversationLog
+
+    log = ConversationLog(tmp_path)
+    for i in range(50):
+        log.add("Çağan", f"satır {i}")
+    tail = log.recent(log.days()[0], budget=200)
+    rows = tail.splitlines()
+    assert rows[-1].endswith("satır 49") and len(tail) <= 200 and "satır 0" not in tail
+    assert log.recent("2000-01-01") == ""

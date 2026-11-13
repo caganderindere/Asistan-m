@@ -25,7 +25,7 @@ from server.usage import GEMINI
 API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
 ONE_SHOT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 MEMORY_DIR = ROOT / "asistan"
-MEMORY_FILES = ("cagan.md", "gorevler.md", "takvim.md", "notlar.md")
+MEMORY_FILES = ("cagan.md", "bugun.md", "gorevler.md", "takvim.md", "notlar.md")
 PROGRAMS = {
     "ekip": ROOT / "tools" / "ekip.py",
     "hatirlatma": ROOT / "tools" / "reminder.py",

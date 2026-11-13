@@ -1033,7 +1033,12 @@ def main(argv: list[str] | None = None) -> None:
     diary = Diary(MEMORY_DIR, talk, ask if gemini_key else None, LifeLog(data_dir))
 
     def last_page() -> str:
-        return diary.latest(datetime.date.today().isoformat())
+        """Yesterday's diary page and what was said today, so a restart forgets nothing of the day."""
+        today = datetime.date.today().isoformat()
+        page, said = diary.latest(today), talk.recent(today)
+        if said:
+            page += f"\n\n# Bugün daha önce konuşulanlar (bilgisayar kapanmış olabilir; kaldığın yerden devam et)\n{said}"
+        return page.strip()
 
     # The app is made last but Cuba's tools need its hiring; they reach it through here.
     late: dict = {}

@@ -120,6 +120,17 @@ class ConversationLog:
     def days(self) -> list[str]:
         return sorted(p.stem for p in self.folder.glob("*.jsonl"))
 
+    def recent(self, day: str, budget: int = 6000) -> str:
+        """The end of *day*'s talk, as much as fits in *budget* characters, oldest line first."""
+        kept: list[str] = []
+        for line in reversed(self.day(day)):
+            row = f"{line['time']} {line['who']}: {line['text'][:300]}"
+            budget -= len(row) + 1
+            if budget < 0:
+                break
+            kept.append(row)
+        return "\n".join(reversed(kept))
+
 
 class Diary:
     """One page per day in asistan/gunluk, written by Gemini from the day's talk and reports."""
