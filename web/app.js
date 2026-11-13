@@ -146,6 +146,7 @@ function handle(msg) {
     case 'office_message':
       // Members asking each other while they work; meeting lines are played by the office itself.
       if (msg.channel === 'birebir') addFeed(msg.sender, msg.name, `→ ${msg.to_name}: ${msg.text}`, 'talk office');
+      else if (msg.channel === 'rapor') addFeed(msg.sender, msg.name, `Rapor: ${msg.text}`, 'talk office');
       break;
     case 'situation':
       showSituation(msg.situation);

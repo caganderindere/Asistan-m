@@ -11,7 +11,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from server.office_bus import OfficeBus
+from server.office_bus import Message, OfficeBus
 from server.office_meeting import LiveMeeting
 from server.omni import OmniClient
 from server.team import ROLES
@@ -86,6 +86,8 @@ class Office:
                 self._where.pop(who, None)
                 self._crew_for(folder).office_rest(who)
                 await self._push(folder)
+            # Kept in the log and the feed too: with no voice session open, Cuba may not be there to hear it.
+            worker.bus.post(Message(who, "lider", report, channel="rapor"))
             await self._tell(f"[EKİP RAPORU — {Path(folder).name}] {worker.role.name}: {report}")
 
         self._background(work())

@@ -76,3 +76,11 @@ async def test_office_tools_route_to_office(tmp_path):
     assert (await tools.run("soz_ver", {"kim": "pazarlama", "soru": "?"})) == {"ok": True}
     assert calls == [("pazarlama", "?")]
     assert "error" in await CubaTools(nothing, lambda k: None, tmp_path).run("soz_ver", {"kim": "pazarlama", "soru": "?"})
+
+
+async def test_report_is_kept_even_when_nobody_listens(tmp_path):
+    o, _, _ = office(tmp_path)
+    await o.give("pazarlama", "Hedef kitleyi çıkar", str(tmp_path))
+    await o.idle()
+    kept = o.workers["pazarlama"].bus.recent("lider")
+    assert [(m.sender, m.channel, m.text) for m in kept] == [("pazarlama", "rapor", "Bitti")]
