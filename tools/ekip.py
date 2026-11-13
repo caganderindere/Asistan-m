@@ -1,6 +1,6 @@
 """The team lead's handle on the team: plan, start and hand out work.
 
-Talks to the running Claude Ses server, which owns the worker processes.
+Talks to the running Cuba server, which owns the worker processes.
 Exit codes: 0 done, 2 the request was refused (reason printed), 3 server unreachable.
 """
 
@@ -40,7 +40,7 @@ def call(path: str, body: dict | None = None) -> dict:
         print(reason or f"Sunucu isteği reddetti ({e.code}).")
         sys.exit(2)
     except OSError:
-        print("Claude Ses sunucusuna ulaşılamadı.")
+        print("Cuba sunucusuna ulaşılamadı.")
         sys.exit(3)
 
 

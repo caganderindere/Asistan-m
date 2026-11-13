@@ -52,7 +52,7 @@ def _ready() -> bool:
 
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
-    assert not _ready(), "Claude Ses is already running on 8765; close it before the e2e test"
+    assert not _ready(), "Cuba is already running on 8765; close it before the e2e test"
     # A scratch data folder: no saved conversation, and the daily briefing is due.
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "CLAUDE_SES_DATA": str(tmp_path_factory.mktemp("data"))}
     proc = subprocess.Popen([PYTHON, "-m", "server.app"], cwd=ROOT, env=env)

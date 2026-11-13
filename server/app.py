@@ -1117,7 +1117,7 @@ def main(argv: list[str] | None = None) -> None:
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))
     if args.open:
         threading.Thread(target=_open_when_ready, args=(server, url), daemon=True).start()
-    print(f"Claude Ses hazırlanıyor: {url} — kapatmak için bu pencereyi kapatın.", flush=True)
+    print(f"Cuba hazırlanıyor: {url} — kapatmak için bu pencereyi kapatın.", flush=True)
     server.run()
 
 

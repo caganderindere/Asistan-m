@@ -1,10 +1,13 @@
 # Cuba — kişisel AI komuta merkezi
 
-Türkçe konuşan, eller serbest kişisel asistan ve ona bağlı bir yazılım ekibi.
-Sen **Cuba**'yla konuşursun (sesle, yazıyla ya da Telegram'dan); Cuba gününü, planını ve
-notlarını tutar, kod işlerini her projenin kendi terminalindeki Claude Code ekibine verir
-ve sonucu sana anlatır. Ekip ekranda gerçek bir ofiste çalışır: kim ne yazıyor, kim kiminle
-konuşuyor, canlı görürsün.
+**Gemini Live** ile gerçek zamanlı konuşan Türkçe kişisel asistan ve ona bağlı bir
+**Claude Code** yazılım ekibi. Cuba'yla telefonda konuşur gibi konuşursun: araya girebilir,
+yarım bırakabilir, yarım saniyede cevap alırsın. Cuba gününü, planını ve notlarını tutar;
+kod işlerini her projenin kendi terminalindeki ekibe verir, rapor gelince sana anlatır.
+Ekip ekranda bir ofiste çalışır: kim ne yazıyor, kim kiminle konuşuyor, canlı görürsün.
+
+Kısaca: **konuşma ve düşünme Gemini'de, kod Claude'da.** Gündelik sohbet Claude token'ı
+harcamaz; Claude yalnızca gerçek bir iş verildiğinde çalışır.
 
 ![Ofis: ekip çalışırken, sağda Cuba'yla konuşma ve ekip toplantısı](docs/img/ofis.png)
 
@@ -16,14 +19,57 @@ konuşuyor, canlı görürsün.
 
 ## Başlatma
 
-- Masaüstündeki **Claude Ses** kısayoluna çift tıkla (ya da `start.cmd`).
+- Masaüstündeki **Cuba** kısayoluna çift tıkla (ya da `start.cmd`).
   Ses tanıma modeli yüklenince tarayıcıda `http://127.0.0.1:8765` açılır.
 - **Küreye dokun** ve konuş; Cuba sesle cevap verir. Ya da alttaki kutuya yaz.
 - **Dur** düğmesi ya da `Esc` her şeyi durdurur.
 - **Yeni konuşma** sohbet geçmişini sıfırlar; plan, not ve hafıza kalır.
-- Kapatmak için küçültülmüş "Claude Ses" komut penceresini kapat; terminaller de onunla kapanır.
+- Kapatmak için küçültülmüş "Cuba" komut penceresini kapat; terminaller de onunla kapanır.
 
 Kısayol silinirse: `powershell -ExecutionPolicy Bypass -File D:\ClaudeSes\tools\make_shortcut.ps1`
+
+## Nasıl çalışır
+
+```mermaid
+flowchart LR
+    Sen((Sen)) -- "ses (mikrofon)" --> Tarayici[Tarayıcı / telefon]
+    Tarayici <-- "16 kHz ses ↑ · 24 kHz ses ↓" --> Sunucu[Yerel sunucu<br/>FastAPI]
+    Sunucu <-- "çift yönlü WebSocket" --> Live[Gemini Live<br/>Cuba]
+    Live -- "araç çağrısı" --> Sunucu
+    Sunucu -- "terminale_ver" --> Terminal[Projenin terminali<br/>Claude Code]
+    Terminal -- "alt ajanlar" --> Ekip[Kıdemli · Geliştirici<br/>Testçi · Asistan]
+    Terminal -- "hook olayları, rapor" --> Sunucu
+    Sunucu -- "[EKİP RAPORU]" --> Live
+    Sunucu --> Ofis[Ofis ekranı]
+```
+
+1. **Ses gider, ses gelir.** Küreye dokununca tarayıcı mikrofonu 16 kHz ham ses olarak yerel
+   sunucuya akıtır. Sunucu bunu Gemini Live API'ye (`gemini-3.1-flash-live-preview`) açık
+   duran tek bir WebSocket üzerinden aktarır; Gemini'nin ürettiği konuşma 24 kHz ses olarak
+   aynı yoldan geri akar ve çalınır. Ses önce yazıya, sonra tekrar sese çevrilmez; bu yüzden
+   cevap yaklaşık yarım saniyede gelir ve Cuba konuşurken sözünü kesebilirsin. API anahtarı
+   tarayıcıya hiç gitmez, sunucuda kalır.
+2. **Cuba neyi bilir?** Her bağlantı açılırken sunucu Cuba'ya bir talimat kurar: kişiliği ve
+   kuralları (`ekip\CANLI.md`), şu anki saat, proje listesi, hafıza dosyaları (`cagan.md`,
+   `bugun.md`, görevler, takvim, notlar), dünkü günlük sayfası ve bugün konuşulanların son
+   kısmı. Böylece bilgisayar kapanıp açılsa da kaldığı yerden devam eder.
+3. **Araçlar.** Cuba bir şey yapmak istediğinde Gemini Live bir *araç çağrısı* gönderir; sunucu
+   aracı çalıştırıp sonucu geri verir, Cuba da sonucu konuşarak anlatır. Araçlar: dosyaya
+   yazma (hafıza), `terminale_ver`, `zamanla`, `terminal_tus` (onay ver/durdur), `ise_al`,
+   `hayat_kaydet`, `durum`, `hava`, `ara` (Google araması).
+4. **Kod işi Claude'a gider.** `terminale_ver` talimatı o projenin terminaline, sen yazmışsın
+   gibi yazar. Orada Claude Code Cuba kimliğiyle çalışır ve gerekirse alt ajanlara dağıtır.
+   Claude Code'un hook'ları her araç kullanımını sunucuya bildirir; ofisteki masalar, kod
+   hologramları ve **Akış** sekmesi buradan beslenir.
+5. **Rapor geri döner.** İş bitince terminalin son cevabı `[EKİP RAPORU]` olarak canlı
+   konuşmaya eklenir; Cuba sana kendi sözleriyle bir iki cümleyle anlatır. Onay gerekirse
+   `[ONAY İSTENİYOR]` gelir ve Cuba sana sorar.
+6. **Yazı ve Telegram.** Yazarak ya da Telegram'dan konuşunca aynı araçlar ve aynı hafızayla
+   Gemini'nin yazılı modeli (`gemini-3.5-flash-lite`) cevap verir; hepsi aynı Cuba'dır.
+   Ekip toplantıları da Gemini'de yazılır ve her ajan kendi Edge sesiyle okunur.
+
+Gemini anahtarı yoksa ya da `config.json`'da `"voice_engine"` `"live"` değilse klasik mod
+çalışır: ses yerelde Whisper ile yazıya dökülür, cevap Edge sesiyle okunur.
 
 ## Cuba
 

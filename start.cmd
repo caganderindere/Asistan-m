@@ -1,5 +1,5 @@
 @echo off
-title Claude Ses
+title Cuba
 cd /d "%~dp0"
 set PYTHONIOENCODING=utf-8
 ".venv\Scripts\python.exe" -m server.app --open
