@@ -1391,6 +1391,62 @@ document.addEventListener('keydown', (e) => {
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
+// ── "Cuba arıyor": push notifications on the phone ──────────
+
+function base64Key(text) {
+  const raw = atob(text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (text.length % 4)) % 4));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function showPushState() {
+  if (!('PushManager' in window)) {
+    $('pushOn').disabled = true;
+    $('pushHint').textContent = 'Bu tarayıcı bildirim alamıyor. iPhone\'da Paylaş → Ana Ekrana Ekle, sonra uygulamayı oradan aç.';
+    return;
+  }
+  const subscribed = await navigator.serviceWorker.ready.then((r) => r.pushManager.getSubscription()).catch(() => null);
+  $('pushOn').textContent = subscribed ? 'Bildirimler açık · tekrar bağla' : 'Telefonda bildirimleri aç';
+}
+
+$('pushOn').addEventListener('click', async () => {
+  try {
+    // iOS asks only from a tap like this one, and only in the home-screen app.
+    if (await Notification.requestPermission() !== 'granted') throw new Error('Bildirim izni verilmedi.');
+    const { key, error } = await (await fetch('/api/push/key')).json();
+    if (error) throw new Error(error);
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription()
+      ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64Key(key) });
+    const r = await fetch('/api/push/subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subscription.toJSON()),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Sunucu aboneliği almadı.');
+    showNotice('Tamam: Cuba artık telefonunu çaldırabilir.');
+  } catch (e) {
+    showNotice(e.message || 'Bildirim açılamadı.');
+  }
+  showPushState();
+});
+showPushState();
+
+async function incomingCall(id) {
+  history.replaceState(null, '', '/');
+  const { text } = await (await fetch('/api/push/answer', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+  })).json().catch(() => ({ text: '' }));
+  $('callWhy').textContent = text || 'Cuba seninle konuşmak istiyor.';
+  // The talk starts on a tap: phones play sound and open the microphone only for one.
+  $('callDialog').showModal();
+}
+
+$('callYes').addEventListener('click', () => { $('callDialog').close(); startHandsFree(); });
+$('callNo').addEventListener('click', () => $('callDialog').close());
+navigator.serviceWorker?.addEventListener('message', (event) => {
+  if (event.data?.type === 'ara') incomingCall(event.data.id);
+});
+const ringing = new URLSearchParams(location.search).get('ara');
+if (ringing !== null) incomingCall(ringing);
+
 // ── The day's plan, on the Yönetim whiteboard ───────────────
 
 const PLAN_ITEM = /^(\s*(?:\d+\.|[-*])\s*)\[( |x|X)\]\s*(.*)$/;

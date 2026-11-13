@@ -204,7 +204,7 @@ BRANCH_TOOLS = [
 LIVE_TOOLS[0]["functionDeclarations"].extend(BRANCH_TOOLS)
 LIVE_TOOLS[0]["functionDeclarations"].append({
     "name": "beni_ara",
-    "description": "Çağan'ın telefonunu çaldırır (Telegram araması, mesaj sesli okunur ve yazılı da gider). Yalnızca gerçekten "
+    "description": "Çağan'ın telefonunu çaldırır (“Cuba arıyor” bildirimi, açana kadar dakikada bir; açınca sesli konuşma başlar ve ilk sen söylersin). Yalnızca gerçekten "
                    "acil ve Çağan seni duymuyorken: ekip onun elini gerektiren bir yerde takıldı, önemli bir hatırlatma.",
     "parameters": {"type": "object", "properties": {"mesaj": {"type": "string", "description": "En çok iki kısa cümle."}},
                    "required": ["mesaj"]},
@@ -441,6 +441,7 @@ class LiveHub:
         self._google = None  # the open Google session
         self._browser: WebSocket | None = None
         self._handle = ""  # lets a dropped session resume where it was
+        self.opening = ""  # why Cuba rang Çağan's phone: said first once he picks up
 
     @property
     def available(self) -> bool:
@@ -474,6 +475,10 @@ class LiveHub:
                         self._google = google
                         failures = 0
                         await self._event({"type": "ready"})
+                        if self.opening:
+                            reason, self.opening = self.opening, ""
+                            await self.tell(f"[ARAMA AÇILDI] Çağan telefonda senin aramanı açtı. Selam ver ve "
+                                            f"neden aradığını hemen, kısaca söyle: {reason}")
                         done = await self._pump(browser, google)
                     if done:
                         return

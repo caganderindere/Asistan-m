@@ -163,6 +163,10 @@
       </div>
       <p class="hint" id="voiceHint">Yeni ses bir sonraki konuşmada (küreye dokununca) devreye girer.</p>
       <div class="memory-head">
+        <button type="button" id="pushOn">Telefonda bildirimleri aç</button>
+      </div>
+      <p class="hint" id="pushHint">Cuba acil bir şeyde telefonunu “Cuba arıyor” bildirimiyle çaldırır. iPhone'da önce Paylaş → Ana Ekrana Ekle, sonra uygulamayı oradan açıp buna bas.</p>
+      <div class="memory-head">
         <label for="memoryFile">Defter</label>
         <select id="memoryFile">
           <option value="cagan.md">Çağan hakkında</option>
@@ -188,6 +192,16 @@
       <p class="empty" id="tasksEmpty">Henüz görev yok. Cuba'ya ne yapılacağını söyle; planı sana okuyup onayını ister.</p>
     </section>
   </aside>
+
+  <dialog class="call" id="callDialog" aria-labelledby="callTitle">
+    <div class="call-orb" aria-hidden="true"></div>
+    <h3 id="callTitle">Cuba arıyor</h3>
+    <p class="call-why" id="callWhy"></p>
+    <div class="call-actions">
+      <button type="button" class="call-no" id="callNo">Sonra</button>
+      <button type="button" class="call-yes" id="callYes">Aç</button>
+    </div>
+  </dialog>
 
   <dialog class="plan" id="planDialog" aria-labelledby="planTitle">
     <button class="close" type="button" data-close aria-label="Kapat">×</button>

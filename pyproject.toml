@@ -18,6 +18,8 @@ dependencies = [
     "pywinpty",
     "soundfile",
     "numpy",
+    # "Cuba arıyor": push notifications to the phone's home-screen app.
+    "pywebpush",
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12==9.*",
 ]

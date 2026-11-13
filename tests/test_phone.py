@@ -1,37 +1,80 @@
 import json
 
-import httpx
 from fastapi.testclient import TestClient
 
 from server.phone import Phone
 from tests.test_app import TOKEN, FakeBridge, make_app
 
 
-def recording(answer: str = "Call queued"):
-    seen = []
-
-    def handle(request):
-        seen.append(request)
-        return httpx.Response(200, text=answer)
-
-    return seen, httpx.MockTransport(handle)
+SUB = {"endpoint": "https://web.push.apple.com/abc", "keys": {"p256dh": "x", "auth": "y"}}
 
 
-async def test_call_rings_the_named_user_in_turkish_once_per_gap(tmp_path):
-    (tmp_path / "arama.json").write_text(json.dumps({"telegram": "@cagan"}), encoding="utf-8")
-    seen, transport = recording()
-    now = [1000.0]
-    phone = Phone(tmp_path / "arama.json", transport, clock=lambda: now[0])
+class Pushes:
+    def __init__(self, status=201):
+        self.sent = []
+        self.status = status
+
+    def __call__(self, sub, payload, key_file):
+        self.sent.append((sub["endpoint"], json.loads(payload), key_file))
+        return self.status
+
+
+def make_phone(tmp_path, pushes, now=None):
+    async def no_wait(_):
+        return None
+
+    return Phone(tmp_path, send=pushes, sleep=no_wait, clock=(lambda: now[0]) if now else lambda: 1000.0)
+
+
+async def test_call_rings_until_answered_and_tells_why(tmp_path):
+    pushes = Pushes()
+    phone = make_phone(tmp_path, pushes)
+    assert "bildirim açılmamış" in (await phone.call("x"))["error"]
+    assert phone.subscribe(SUB) == 1 and phone.subscribe(SUB) == 1  # the same phone twice is one device
     assert (await phone.call("Ekip   UAC onayı bekliyor"))["ok"]
-    params = seen[0].url.params
-    assert params["user"] == "@cagan" and params["lang"] == "tr-TR-Standard-A" and params["text"] == "Ekip UAC onayı bekliyor"
-    assert "error" in await phone.call("yine")
+    await phone.idle()
+    assert len(pushes.sent) == 5  # nobody answered: five rings
+    call = pushes.sent[0][1]
+    assert call["body"] == "Ekip UAC onayı bekliyor" and call["title"] == "📞 Cuba arıyor"
+    assert phone.answer(call["id"]) == "Ekip UAC onayı bekliyor" and phone.answer("yok") == ""
+    assert (tmp_path / "push_vapid.pem").exists() and len(phone.public_key()) > 80
+
+
+async def test_answering_stops_the_ringing(tmp_path):
+    pushes = Pushes()
+    phone = make_phone(tmp_path, pushes)
+    phone.subscribe(SUB)
+
+    def answer_on_first(sub, payload, key_file):
+        pushes(sub, payload, key_file)
+        phone.answer(json.loads(payload)["id"])
+        return 201
+
+    phone._send = answer_on_first
+    await phone.call("acil")
+    await phone.idle()
+    assert len(pushes.sent) == 1
+
+
+async def test_gone_phones_are_forgotten_and_calls_are_spaced(tmp_path):
+    now = [1000.0]
+    phone = make_phone(tmp_path, Pushes(status=410), now)
+    phone.subscribe(SUB)
+    await phone.call("bir")
+    await phone.idle()
+    assert phone.devices == 0
+    phone.subscribe(SUB)
+    assert "Az önce" in (await phone.call("iki"))["error"]
     now[0] += 121
-    assert (await phone.call("yine"))["ok"] and len(seen) == 2
+    assert (await phone.call("iki"))["ok"]
+    await phone.idle()
 
 
-async def test_call_without_setup_says_so(tmp_path):
-    assert "kurulmamış" in (await Phone(tmp_path / "arama.json").call("x"))["error"]
+def test_bad_subscription_is_refused(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError):
+        make_phone(tmp_path, Pushes()).subscribe({"endpoint": "http://x"})
 
 
 class FakePhone:
@@ -82,9 +125,18 @@ async def test_cuba_can_ring(tmp_path):
     assert phone.calls == ["Toplantı 5 dakika sonra"]
 
 
-async def test_an_error_late_in_the_service_log_is_a_failure(tmp_path):
-    (tmp_path / "arama.json").write_text(json.dumps({"telegram": "@cagan"}), encoding="utf-8")
-    log = "<p>Checking Authorization...</p>" + "x " * 300 + "<p>Error: Someone reported CallMeBot as spammer.</p> End."
-    _, transport = recording(log)
-    result = await Phone(tmp_path / "arama.json", transport).call("deneme")
-    assert "spammer" in result["error"]
+
+def test_page_subscribes_and_an_answered_call_opens_the_talk(tmp_path):
+    class Live:
+        opening = ""
+        active = False
+
+    phone, live = Phone(tmp_path), Live()
+    app = make_app(tmp_path, FakeBridge(), phone=phone, live=live)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        assert len(client.get("/api/push/key").json()["key"]) > 80
+        assert client.post("/api/push/subscribe", json=SUB).json()["devices"] == 1
+        assert client.post("/api/push/subscribe", json={"endpoint": "x"}).status_code == 400
+        phone._calls["abc"] = {"text": "UAC onayı lazım", "answered": False}
+        assert client.post("/api/push/answer", json={"id": "abc"}).json()["text"] == "UAC onayı lazım"
+        assert live.opening == "UAC onayı lazım"

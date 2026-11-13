@@ -578,6 +578,29 @@ def create_app(
     async def team_state(body: dict) -> dict:
         return team.snapshot()
 
+    @app.get("/api/push/key")
+    async def push_key() -> dict:
+        if phone is None:
+            return {"error": "Bildirim yok."}
+        return {"key": await asyncio.to_thread(phone.public_key), "devices": phone.devices}
+
+    @app.post("/api/push/subscribe")
+    async def push_subscribe(request: Request) -> JSONResponse:
+        if phone is None:
+            return JSONResponse({"error": "Bildirim yok."}, status_code=404)
+        try:
+            return JSONResponse({"ok": True, "devices": phone.subscribe(await request.json())})
+        except (ValueError, AttributeError) as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+
+    @app.post("/api/push/answer")
+    async def push_answer(request: Request) -> dict:
+        """Çağan opened "Cuba arıyor": ringing stops and Cuba opens the talk with the reason."""
+        text = phone.answer(str((await request.json()).get("id", ""))) if phone is not None else ""
+        if text and live is not None:
+            live.opening = text
+        return {"text": text}
+
     @team_route("cagan")
     async def reach_cagan(body: dict) -> dict:
         """The team needs Çağan's own hand (a UAC prompt, a login, a decision): reach him wherever he is."""
@@ -1105,7 +1128,7 @@ def main(argv: list[str] | None = None) -> None:
 
     life = LifeLog(data_dir)
     schedule = Schedule(data_dir / "zamanli.json")
-    phone = Phone(data_dir / "arama.json")
+    phone = Phone(data_dir)
 
     async def search(question: str) -> dict:
         from server.life import web_search

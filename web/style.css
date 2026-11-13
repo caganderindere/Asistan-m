@@ -769,3 +769,19 @@ body[data-mode="assistant"] .roster { display: none; }
   .plan-open .asst-orb, .plan-open .asst-text { left: calc(50% - 170px); }
   .plan-open .asst-text { width: min(560px, calc(100% - 400px)); }
 }
+
+/* "Cuba arıyor": the phone's incoming call, opened from the push notification. */
+dialog.call { width: min(340px, calc(100vw - 32px)); text-align: center; padding: 28px 20px 22px; }
+dialog.call h3 { font-size: 18px; margin-top: 16px; }
+.call-orb {
+  width: 84px; height: 84px; margin: 0 auto; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, var(--neon), var(--work) 70%);
+  box-shadow: 0 0 0 0 rgb(79 216 255 / .5); animation: call-ring 1.4s ease-out infinite;
+}
+@keyframes call-ring { to { box-shadow: 0 0 0 26px rgb(79 216 255 / 0); } }
+@media (prefers-reduced-motion: reduce) { .call-orb { animation: none; } }
+.call-why { color: var(--muted); font-size: 14px; margin: 8px 0 20px; }
+.call-actions { display: flex; gap: 12px; }
+.call-actions button { flex: 1; min-height: 48px; border-radius: 24px; border: 0; font: 600 15px var(--text); cursor: pointer; }
+.call-yes { background: var(--speak); color: var(--space); }
+.call-no { background: var(--panel-2); color: var(--ink); }
