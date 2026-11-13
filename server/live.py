@@ -141,7 +141,7 @@ LIVE_TOOLS = [{"functionDeclarations": [
     },
 ]}]
 
-# The marketing team works on the free models in the office; Cuba gives it work and chairs its meetings.
+# The marketing team works as Claude subagents in the terminal; its meetings run on Claude Haiku.
 OFFICE_TOOLS = [
     {
         "name": "ekibe_ver",
@@ -151,7 +151,7 @@ OFFICE_TOOLS = [
             "properties": {
                 "kim": {"type": "string", "enum": ["pazarlama", "icerik", "sosyal"]},
                 "proje": {"type": "string", "description": "İşin yapılacağı projenin adı, Projeler listesinden."},
-                "talimat": {"type": "string", "description": "İşi eksiksiz anlatan tek paragraf: ürün, hedef kitle, ton, çıktı."},
+                "talimat": {"type": "string", "description": "İşi eksiksiz anlatan talimat: ürün, hedef kitle, ton, çıktı. Çağan'ın kendi sözlerini ve verdiği linkleri aynen koy."},
             },
             "required": ["kim", "proje", "talimat"],
         },
@@ -260,8 +260,8 @@ class CubaTools:
         self.projects = projects  # the project listing, as the browser gets it
 
     async def _office(self, name: str, args: dict) -> dict:
-        if self.office is None:
-            return {"error": "Ofis ekibi çalışmıyor: OmniRoute anahtarı yok."}
+        if name != "ekibe_ver" and self.office is None:
+            return {"error": "Toplantı açılamıyor: Claude Code bulunamadı."}
         if name == "soz_ver":
             return await self.office.give_floor(str(args.get("kim", "")), str(args.get("soru", "")))
         if name == "toplanti_kapat":
@@ -276,7 +276,10 @@ class CubaTools:
             return await self.office.open_meeting(str(args.get("konu", "")), [str(k) for k in args.get("kisiler", [])], folder)
         if not str(args.get("talimat", "")).strip():
             return {"error": "Talimat boş."}
-        return await self.office.give(str(args.get("kim", "")), str(args["talimat"]).strip(), folder)
+        # Marketing works as a Claude Code subagent in the terminal: real web, files and skills.
+        who = str(args.get("kim", "")).strip()
+        await self._hand_over(f"Bu iş `cuba-ekip:{who}` üyesinin; Agent aracıyla ona ver.\n\n{str(args['talimat']).strip()}", folder)
+        return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
 
     async def run(self, name: str, args: dict) -> dict:
         try:

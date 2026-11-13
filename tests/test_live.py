@@ -192,3 +192,21 @@ def test_projects_are_found_by_path_name_or_the_one_name_containing_it():
     assert find_project(PROJECTS, "claudeses") == r"D:\ClaudeSes"
     assert find_project(PROJECTS, "eski") == r"D:\web\balbal-eski"
     assert find_project(PROJECTS, "balbal") is None and find_project(PROJECTS, "") is None
+
+
+async def test_marketing_work_goes_to_the_terminal_subagent(tmp_path):
+    from server.live import CubaTools
+
+    handed: list[tuple[str, str]] = []
+
+    async def hand_over(text: str, folder: str) -> None:
+        handed.append((text, folder))
+
+    async def press(*_):
+        return None
+
+    tools = CubaTools(hand_over, press, tmp_path, projects=lambda: {"projects": [{"name": "site", "path": "D:/site"}]})
+    result = await tools.run("ekibe_ver", {"kim": "pazarlama", "proje": "site", "talimat": "balbalmedya.com'u analiz et"})
+    assert result["ok"]
+    assert handed[0][1] == "D:/site"
+    assert "cuba-ekip:pazarlama" in handed[0][0] and "balbalmedya.com" in handed[0][0]

@@ -25,6 +25,11 @@ SCROLLBACK_CHARS = 200_000
 SPOKEN_LIMIT = 400
 MORE_ON_SCREEN = "Ayrıntılar ekranda."
 PERMISSION_LINE = "Onayın gerekiyor patron. Evet ya da hayır de."
+ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[@-_]")
+# Claude Code's input box is up: its footer shows one of these.
+READY_MARKS = ("for shortcuts", "bypass permissions", "accept edits", "plan mode")
+# The first time Claude opens a folder it asks whether to trust it; Enter says yes.
+TRUST_MARKS = ("trust the files", "trust this folder", "Yes, proceed", "Yes, I trust")
 # Claude Code starts a subagent with one of these tools.
 AGENT_TOOLS = ("Task", "Agent")
 # The office's desks: the lead's for Claude itself, the others for its subagents.
@@ -63,8 +68,9 @@ def hook_settings(
             "PostToolUse": hook("post", "|".join(AGENT_TOOLS)),
             "SubagentStop": hook("subagent_stop"),
         },
-        # Walking around the office is not worth asking Çağan about.
-        "permissions": {"allow": [f"Bash({command}:*)" for command in allow]},
+        # Çağan wants the team as free as his own Claude Code: no permission prompts, skills and installs included.
+        "permissions": {"defaultMode": "bypassPermissions", "allow": [f"Bash({command}:*)" for command in allow]},
+        "skipDangerousModePermissionPrompt": True,
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "terminal-settings.json"
@@ -123,6 +129,9 @@ class Terminal:
         self._size = 0
         self._listeners: set[asyncio.Queue[str]] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._started = 0.0
+        self._last_output = 0.0
+        self.prompts = 0  # prompts Claude took in, counted by the UserPromptSubmit hook
 
     @property
     def alive(self) -> bool:
@@ -153,6 +162,7 @@ class Terminal:
         self._size = 0
         for queue in self._listeners:
             queue.put_nowait("\x1bc")  # open screens start over too
+        self._started = self._last_output = time.monotonic()
         self._proc = spawn(self._argv, cwd=self._cwd, env={**child_env(os.environ), **self._env}, dimensions=(rows, cols))
         threading.Thread(target=self._read, args=(self._proc,), daemon=True).start()
 
@@ -166,6 +176,50 @@ class Terminal:
 
     def history(self) -> str:
         return "".join(self._scrollback)
+
+    def screen(self, chars: int = 6000) -> str:
+        """The latest output as plain text."""
+        return ANSI.sub("", self.history()[-chars:])
+
+    async def wait_ready(self, timeout: float = 90, poll: float = 0.5) -> None:
+        """Wait until Claude Code takes typing: its input box is up and the screen is still.
+
+        A trust question is answered yes on the way. With no sign by *timeout*, go on anyway.
+        """
+        deadline = time.monotonic() + timeout
+        trusted = False
+        while time.monotonic() < deadline:
+            await asyncio.sleep(poll)
+            screen = self.screen()
+            quiet = time.monotonic() - self._last_output
+            if not trusted and any(mark in screen for mark in TRUST_MARKS):
+                self.write("\r")
+                trusted = True
+                continue
+            if quiet >= 1 and any(mark in screen for mark in READY_MARKS):
+                return
+            # A footer we do not know: long after start and silent for a while is ready too.
+            if quiet >= 4 and time.monotonic() - self._started >= 10:
+                return
+
+    async def deliver(self, text: str, heard_timeout: float = 20) -> bool:
+        """Type *text* into Claude and send it; True once Claude's prompt hook confirms it arrived."""
+        if not self.alive:
+            self.start()
+        await self.wait_ready()
+        before = self.prompts
+        self.write(text)
+        await asyncio.sleep(0.2)  # text and Enter together would land as a paste
+        self.write("\r")
+        for attempt in range(2):
+            deadline = time.monotonic() + heard_timeout
+            while time.monotonic() < deadline:
+                if self.prompts > before:
+                    return True
+                await asyncio.sleep(0.5)
+            if attempt == 0:
+                self.write("\r")  # the Enter may have been swallowed; on an empty box it does nothing
+        return False
 
     def listen(self) -> asyncio.Queue[str]:
         queue: asyncio.Queue[str] = asyncio.Queue()
@@ -192,6 +246,7 @@ class Terminal:
             self._loop.call_soon_threadsafe(self._publish, "\r\n[Terminal kapandı; gerektiğinde yeniden açılır.]\r\n")
 
     def _publish(self, data: str) -> None:
+        self._last_output = time.monotonic()
         self._scrollback.append(data)
         self._size += len(data)
         while self._size > SCROLLBACK_CHARS and len(self._scrollback) > 1:

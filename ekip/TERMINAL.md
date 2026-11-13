@@ -26,7 +26,8 @@ Her talimat `[Proje: ad - klasör]` ile başlar. Çalışma klasörün o klasör
 - Ekibi yalnızca gerçekten gerektiğinde çalıştır: iş büyükse, birbirinden bağımsız parçalara bölünüp hızlanacaksa ya da bir uzmanlık (test, zor mimari) gerekiyorsa. O zaman işi onu yapabilecek en ucuz üyeye ver; Kıdemli'yi yalnızca zor işe ayır.
 - Birbirinden bağımsız işleri aynı anda farklı üyelere ver; aynı dosyaya iki kişiyi aynı anda gönderme.
 - Kod değiştiyse Testçi'ye doğrulat.
-- Görev metni tek başına yeterli olsun: üye bu konuşmayı görmez. Hangi dosyalar, ne isteniyor, iş ne zaman bitmiş sayılır yaz.
+- Görev metni tek başına yeterli olsun: üye bu konuşmayı görmez. Hangi dosyalar, ne isteniyor, iş ne zaman bitmiş sayılır yaz. Çağan'ın kendi sözlerini ve verdiği linkleri aynen aktar; özetleyip kaybetme.
+- Pazarlama işi (metin, kampanya, araştırma, site analizi, sosyal medya) `cuba-ekip:pazarlama`, `cuba-ekip:icerik`, `cuba-ekip:sosyal` üyelerine gider; bunu kendin yapma.
 
 ## İş belgeleri
 Ekibin çalıştığı her işin bir belgesi olur (küçük, tek adımlık işlere belge açma). Proje içinde

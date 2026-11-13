@@ -328,12 +328,15 @@ def test_two_subagent_reports_bring_the_team_to_a_meeting(tmp_path, pty, monkeyp
                    if m["type"] == "terminal_team" and m["project"] == str(tmp_path))
 
 
-def test_marketing_is_not_a_terminal_subagent(tmp_path):
+def test_marketing_is_a_claude_subagent_that_reads_context(tmp_path):
     from server.config import DEFAULT_MODELS
     from server.prompts import write_terminal_team
 
     _, plugin = write_terminal_team(tmp_path, DEFAULT_MODELS)
-    assert not (plugin / "agents" / "pazarlama.md").exists()
+    pazarlama = (plugin / "agents" / "pazarlama.md").read_text(encoding="utf-8")
+    assert "model: sonnet" in pazarlama
+    assert "model: haiku" in (plugin / "agents" / "sosyal.md").read_text(encoding="utf-8")
+    assert "/asistan/cagan.md" in pazarlama and "{{asistan}}" not in pazarlama
     assert (plugin / "agents" / "gelistirici.md").exists()
 
 
@@ -349,3 +352,36 @@ def test_office_work_and_meeting_show_on_crew():
     assert crew.snapshot()["phase"] == "review"
     crew.show_meeting(None)
     assert crew.review is None
+
+
+async def test_deliver_waits_for_claude_trusts_the_folder_and_confirms(tmp_path):
+    pty = FakePty()
+    pty.output = ["\x1b[1mDo you trust the files in this folder?\x1b[0m 1. Yes, proceed"]
+    terminal = Terminal(["x"], str(tmp_path), spawn=lambda *a, **k: pty)
+
+    def write(data):
+        pty.written.append(data)
+        if data == "\r" and len(pty.written) == 1:  # trust answered: Claude's input box comes up
+            terminal._publish("\x1b[2m? for shortcuts\x1b[0m")
+        elif data == "\r":
+            terminal.prompts += 1  # the UserPromptSubmit hook heard it
+
+    pty.write = write
+    assert await terminal.deliver("pazar araştırması yap", heard_timeout=2)
+    assert pty.written == ["\r", "pazar araştırması yap", "\r"]
+    pty.done.set()
+
+
+async def test_deliver_reports_when_claude_never_takes_it(tmp_path):
+    pty = FakePty()
+    pty.output = ["? for shortcuts"]
+    terminal = Terminal(["x"], str(tmp_path), spawn=lambda *a, **k: pty)
+    assert not await terminal.deliver("iş", heard_timeout=0.3)
+    assert pty.written == ["iş", "\r", "\r"]  # one more Enter before giving up
+    pty.done.set()
+
+
+def test_terminal_runs_with_full_permissions(tmp_path):
+    settings = json.loads(hook_settings("python", tmp_path).read_text(encoding="utf-8"))
+    assert settings["permissions"]["defaultMode"] == "bypassPermissions"
+    assert settings["skipDangerousModePermissionPrompt"] is True

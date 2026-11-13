@@ -34,6 +34,7 @@ def worker_prompt(template: str, role: Role) -> str:
         template.replace("{{name}}", role.name)
         .replace("{{department}}", role.department)
         .replace("{{duty}}", role.duty)
+        .replace("{{asistan}}", PROFILE.parent.as_posix())
         .replace("{{yontem}}", (TEMPLATES / method).read_text(encoding="utf-8"))
     )
 
@@ -86,8 +87,7 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
     """
     from server.roster import MODELS
 
-    # The marketing team works on the free models (server/office.py), not as Claude subagents.
-    workers = [role for role in ROLES if role.id != LEAD and role.department != "Pazarlama"] + [Role(h.id, h.name, "Yeni ekip", h.duty) for h in hires]
+    workers = [role for role in ROLES if role.id != LEAD] + [Role(h.id, h.name, "Yeni ekip", h.duty) for h in hires]
     models = {**models, **{h.id: MODELS[h.model] for h in hires}}
     roster = "\n".join(
         f"- `{role.id}`: {role.name}, {role.department}, model {models.get(role.id, '?')}. {role.duty}"

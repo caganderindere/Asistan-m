@@ -38,7 +38,7 @@ from server.live import LiveHub
 from server.meeting import hold_meeting
 from server.office import Office
 from server.office_bus import OfficeBus
-from server.omni import OmniClient, load_key
+from server.claude_chat import ClaudeChat
 from server.memory import ConversationLog, Diary, ensure_profile
 from server.supervisor import Supervisor
 from server.terminal import (
@@ -587,6 +587,8 @@ def create_app(
             # Away, Cuba says yes in the user's place; present, Claude asks as usual.
             return {"behavior": "allow"} if boss.away else {}
         if kind == "prompt":
+            if terminals is not None:
+                terminals.get(folder).prompts += 1
             boss.note_prompt(str(body.get("text", "")), folder)
             crew.prompt()
         elif kind == "pre":
@@ -1029,21 +1031,33 @@ def main(argv: list[str] | None = None) -> None:
 
     supervisor = Supervisor(ask if gemini_key else None, data_dir / "terminal" / "outputs.json")
 
+    deliveries: set[asyncio.Task] = set()
+
     async def hand_over(instruction: str, folder: str) -> None:
         """Type Cuba's instruction into that project's own terminal, as if Çağan had; others keep working."""
         terminal = terminals.get(folder)
-        if not terminal.alive:
-            terminal.start()
-            await asyncio.sleep(8)  # Claude Code takes a moment before it reads its prompt
         # One line: a newline would send the instruction before it is all typed.
         instruction = (
             f"[Proje: {project_name(folder)} - {folder}. Çalışma klasörün bu değilse hiçbir şeyi "
             f"değiştirme, dur ve sor.] {' '.join(instruction.split())}"
         )
         supervisor.note_prompt(instruction, folder)
-        terminal.write(instruction)
-        await asyncio.sleep(0.2)  # text and Enter together would land as a paste
-        terminal.write("\r")
+
+        async def deliver() -> None:
+            # Started if closed, typed only once Claude is ready, and checked that Claude really took it.
+            if await terminal.deliver(instruction):
+                return
+            text = (f"[TERMİNAL — {project_name(folder)}] Talimat terminale ulaşmadı; ekip çalışmıyor. "
+                    "Çağan'a söyle, terminale bakmasını ya da tekrar denemeyi öner.")
+            if live is not None and live.active:
+                await live.tell(text)
+            elif telegram is not None:
+                await telegram.send(text)
+
+        # A cold Claude Code can take a minute to open; the voice must not wait on it.
+        task = asyncio.create_task(deliver())
+        deliveries.add(task)
+        task.add_done_callback(deliveries.discard)
 
     def press(keys: str) -> None:
         """Answer the terminal that asked last; with none asking, the open project's."""
@@ -1082,9 +1096,9 @@ def main(argv: list[str] | None = None) -> None:
             late["app"].state.notify(message)
 
     office = None
-    omni = OmniClient(load_key())
+    omni = ClaudeChat("haiku")
     if omni.available:
-        # The marketing team on the free models; the app it reports through is made further down.
+        # The marketing team's meetings on Claude Haiku; the app it reports through is made further down.
         async def office_tell(text: str) -> None:
             if live is not None and live.active:
                 await live.tell(text)
