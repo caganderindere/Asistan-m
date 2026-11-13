@@ -107,6 +107,7 @@
       <button type="button" role="tab" data-pane="talk" aria-selected="true">Konuşma</button>
       <button type="button" role="tab" data-pane="feed" aria-selected="false">Akış</button>
       <button type="button" role="tab" data-pane="tasks" aria-selected="false">Görevler</button>
+      <button type="button" role="tab" data-pane="schedule" aria-selected="false">Zamanlı</button>
       <button type="button" role="tab" data-pane="outputs" aria-selected="false">Çıktılar</button>
       <button type="button" role="tab" data-pane="project" aria-selected="false">Proje</button>
       <button type="button" role="tab" data-pane="memory" aria-selected="false">Hafıza</button>
@@ -117,6 +118,10 @@
     <section class="panel" data-pane="feed" hidden>
       <ol class="feed" id="feed"></ol>
       <p class="empty" id="feedEmpty">Ajanlar çalışmaya ya da konuşmaya başladığında kim ne yapıyor, ne diyor burada canlı akar.</p>
+    </section>
+    <section class="panel" data-pane="schedule" hidden>
+      <ol class="jobs" id="jobs"></ol>
+      <p class="empty" id="jobsEmpty">Zamanlı iş yok. Cuba'ya "30 dakika sonra şunu yap" de; iş burada bekler, zamanı gelince ekibe verilir. Sunucu kapalıyken zamanı geçen iş yapılmadan önce sana sorulur.</p>
     </section>
     <section class="panel" data-pane="outputs" hidden>
       <ol class="outputs" id="outputs"></ol>
@@ -168,6 +173,6 @@
     </article>
   </template>
 
-  <script type="module" src="/static/app.js?v=12"></script>
+  <script type="module" src="/static/app.js?v=13"></script>
 </body>
 </html>

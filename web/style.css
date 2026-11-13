@@ -650,3 +650,14 @@ body[data-mode="terminal"] .roster { display: none; }
   .history, #tasks, .feed { max-height: none; }
 }
 
+
+.jobs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.jobs li { padding: 8px 10px; border-radius: 8px; background: rgb(255 255 255 / .03); border: 1px solid var(--line-2); font-size: 13px; }
+.jobs li[data-status="soruluyor"] { border-color: var(--neon); }
+.jobs li[data-status="yapildi"] { opacity: .55; }
+.jobs p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.job-head { display: flex; align-items: baseline; gap: 8px; }
+.job-head time { font: 12px var(--mono); }
+.job-project { font-weight: 600; }
+.job-status { margin-left: auto; color: var(--muted); font-size: 11px; }
+.job-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }

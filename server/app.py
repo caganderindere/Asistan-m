@@ -43,6 +43,7 @@ from server.terminal import (
 )
 from server.life import LifeLog
 from server.roster import Roster
+from server.schedule import Schedule
 from server.usage import GEMINI, ClaudeMeter
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ OFFICE_PEOPLE = {"lider", "kidemli", "gelistirici", "testci", "asistan", "cagan"
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 USAGE_EVERY_S = 30
 DIARY_EVERY_S = 600
+SCHEDULE_EVERY_S = 15
 MEETING_PACE_S = 3.5  # at least this long per line of a meeting, so it can be followed
 SPOKEN_CHARS_PER_S = 13  # a longer line waits until it has been said aloud
 # Gemini Live voices Cuba can speak with, deep ones first; chosen on the Hafıza pane.
@@ -126,6 +128,8 @@ def create_app(
     rewrite_team: Callable[[], None] = lambda: None,
     chat=None,
     life: LifeLog | None = None,
+    schedule: Schedule | None = None,
+    hand_over: Callable[[str, str], Awaitable[None]] | None = None,
 ) -> FastAPI:
     clients = _Clients()
     if terminals is None and terminal is not None:
@@ -265,6 +269,8 @@ def create_app(
                  asyncio.create_task(report_usage()), asyncio.create_task(keep_diary())]
         if telegram is not None:
             tasks.append(asyncio.create_task(telegram.run()))
+        if schedule is not None and hand_over is not None:
+            tasks.append(asyncio.create_task(run_schedule()))
         yield
         for task in tasks:
             task.cancel()
@@ -279,6 +285,39 @@ def create_app(
             with contextlib.suppress(Exception):
                 await clients.send(await asyncio.to_thread(usage_view))
             await asyncio.sleep(USAGE_EVERY_S)
+
+    async def run_schedule() -> None:
+        """Hands each job to its terminal on time; a missed one waits for Çağan's word."""
+        while True:
+            with contextlib.suppress(Exception):
+                run, ask = schedule.due()
+                for job in run:
+                    await hand_over(job["text"], job["folder"])
+                    await clients.send({"type": "notice", "text": f"Zamanlı iş #{job['id']} ekibe verildi: {job['project']}"})
+                for job in ask:
+                    await ask_late(job)
+                if run or ask:
+                    await clients.send({"type": "schedule", "jobs": schedule.view()})
+            await asyncio.sleep(SCHEDULE_EVERY_S)
+
+    async def ask_late(job: dict) -> None:
+        line = f"#{job['id']} ({job['at']}, {job['project']}): {job['text'][:200]}"
+        await clients.send({"type": "notice", "text": f"Zamanı geçmiş iş onay bekliyor — {line}"})
+        if live is not None and live.active:
+            await live.tell(f"[ZAMANI GEÇMİŞ İŞ] {line}\nSunucu kapalıyken zamanı geçti. Çağan'a yapılsın mı diye sor; "
+                            "evet derse zamanli_calistir, hayır derse zamanli_sil.")
+        elif telegram is not None:
+            def answer(choice: str) -> None:
+                if schedule.get(job["id"]) is None:
+                    return
+                if choice == "evet":
+                    schedule.mark_done(job)
+                    asyncio.get_running_loop().create_task(hand_over(job["text"], job["folder"]))
+                else:
+                    schedule.remove(job["id"])
+                notify({"type": "schedule", "jobs": schedule.view()})
+
+            await telegram.ask_approval(f"⏰ Zamanı geçmiş iş: {line}\nŞimdi yapılsın mı?", answer)
 
     async def keep_diary() -> None:
         """Once a day is over, Cuba writes its diary page and learns from it."""
@@ -336,6 +375,25 @@ def create_app(
     @app.get("/api/life")
     async def life_read() -> JSONResponse:
         return JSONResponse({"week": life.entries(), "situation": life.situation()})
+
+    @app.get("/api/schedule")
+    async def schedule_read() -> JSONResponse:
+        return JSONResponse({"jobs": schedule.view() if schedule is not None else []})
+
+    @app.post("/api/schedule/{job_id}/{action}")
+    async def schedule_act(job_id: int, action: str, request: Request) -> JSONResponse:
+        if not same_site(request):
+            return JSONResponse({"error": "Yetkisiz istek."}, status_code=403)
+        job = schedule.get(job_id) if schedule is not None else None
+        if job is None or action not in ("sil", "calistir"):
+            return JSONResponse({"error": "Böyle bir iş yok."}, status_code=404)
+        if action == "sil":
+            schedule.remove(job_id)
+        else:
+            schedule.mark_done(job)
+            await hand_over(job["text"], job["folder"])
+        await clients.send({"type": "schedule", "jobs": schedule.view()})
+        return JSONResponse({"ok": True})
 
     @app.get("/api/settings")
     async def settings_read() -> JSONResponse:
@@ -742,6 +800,8 @@ def create_app(
         await clients.send({"type": "outputs", "items": boss.outputs}, ws)
         await clients.send(roster_view(), ws)
         await clients.send({"type": "situation", "situation": life.situation()}, ws)
+        if schedule is not None:
+            await clients.send({"type": "schedule", "jobs": schedule.view()}, ws)
         # With Cuba on Gemini, one conversation runs across voice, page and Telegram.
         await clients.send({"type": "chat", "turns": chat_turns() if chat is not None else team.chat}, ws)
         try:
@@ -985,6 +1045,7 @@ def main(argv: list[str] | None = None) -> None:
         return await late["app"].state.fire(name)
 
     life = LifeLog(data_dir)
+    schedule = Schedule(data_dir / "zamanli.json")
 
     async def search(question: str) -> dict:
         from server.life import web_search
@@ -999,7 +1060,7 @@ def main(argv: list[str] | None = None) -> None:
         from server.live import CubaTools
 
         return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire,
-                         life=life, search=search if gemini_key else None, notify=notify)
+                         life=life, search=search if gemini_key else None, notify=notify, schedule=schedule)
 
     def live_voice() -> str:
         return late["app"].state.settings()["live_voice"] if "app" in late else config.live_voice
@@ -1045,6 +1106,7 @@ def main(argv: list[str] | None = None) -> None:
         config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminals=terminals,
         supervisor=supervisor, live=live, ask=ask if gemini_key else None, telegram=telegram, remote_hosts=remote,
         roster=roster, rewrite_team=rewrite_team, chat=chat, synth_as=speak_as, life=life,
+        schedule=schedule, hand_over=hand_over,
     )
     late["app"] = app
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))

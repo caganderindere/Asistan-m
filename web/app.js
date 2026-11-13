@@ -141,6 +141,9 @@ function handle(msg) {
     case 'situation':
       showSituation(msg.situation);
       break;
+    case 'schedule':
+      showJobs(msg.jobs);
+      break;
     case 'life':
       addFeed('cagan', 'Çağan', `${LIFE_ICONS[msg.entry.kind] ?? '•'} ${msg.entry.detail}`, 'life');
       if (pane === 'memory') showLife();
@@ -445,6 +448,41 @@ async function showLife() {
   }) : [Object.assign(document.createElement('li'), {
     className: 'empty', textContent: 'Cuba\'ya sporundan, yolundan, yemeğinden bahsettikçe burada birikir.',
   })]));
+}
+
+// ── Scheduled work: waiting, missed (asks first), done ──────
+
+const JOB_LABELS = { bekliyor: 'Bekliyor', soruluyor: 'Zamanı geçti — onay bekliyor', yapildi: 'Ekibe verildi' };
+
+function showJobs(jobs) {
+  $('jobsEmpty').hidden = jobs.length > 0;
+  const waiting = jobs.filter((j) => j.status !== 'yapildi').length;
+  const tab = document.querySelector('.side-tabs [data-pane="schedule"]');
+  tab.textContent = waiting ? `Zamanlı (${waiting})` : 'Zamanlı';
+  $('jobs').replaceChildren(...jobs.map((job) => {
+    const li = document.createElement('li');
+    li.dataset.status = job.status;
+    const head = document.createElement('div');
+    head.className = 'job-head';
+    head.append(Object.assign(document.createElement('time'), { textContent: job.at.slice(5).replace('-', '.') }),
+      Object.assign(document.createElement('span'), { className: 'job-project', textContent: job.project }),
+      Object.assign(document.createElement('span'), { className: 'job-status', textContent: JOB_LABELS[job.status] ?? job.status }));
+    li.append(head, Object.assign(document.createElement('p'), { textContent: job.text }));
+    if (job.status !== 'yapildi') {
+      const actions = document.createElement('div');
+      actions.className = 'job-actions';
+      for (const [action, label] of [['calistir', job.status === 'soruluyor' ? 'Şimdi yap' : 'Hemen yap'], ['sil', 'Sil']]) {
+        const button = Object.assign(document.createElement('button'), { type: 'button', className: 'ghost', textContent: label });
+        button.addEventListener('click', () => {
+          if (action === 'sil' && !confirm(`#${job.id} silinsin mi?`)) return;
+          fetch(`/api/schedule/${job.id}/${action}`, { method: 'POST' });
+        });
+        actions.append(button);
+      }
+      li.append(actions);
+    }
+    return li;
+  }));
 }
 
 // ── Header: the open project, the team, the time ────────────

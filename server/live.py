@@ -21,6 +21,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
 from server.life import KINDS, SITUATIONS, LifeLog, weather
+from server.schedule import Schedule, parse_when
 from server.config import ROOT
 from server.usage import GEMINI
 
@@ -101,6 +102,35 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {"ad": {"type": "string"}}, "required": ["ad"]},
     },
     {
+        "name": "zamanla",
+        "description": "Bir işi ileri bir zamanda terminaldeki ekibe verilmek üzere kaydeder: \"30 dk sonra şunu yap\".",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "proje": {"type": "string", "description": "İşin yapılacağı projenin adı, Projeler listesinden."},
+                "talimat": {"type": "string", "description": "İşi eksiksiz anlatan tek paragraf."},
+                "dakika": {"type": "integer", "description": "Kaç dakika sonra; ya bu ya zaman."},
+                "zaman": {"type": "string", "description": "YYYY-MM-DD HH:MM ya da yalnızca HH:MM."},
+            },
+            "required": ["proje", "talimat"],
+        },
+    },
+    {
+        "name": "zamanli_liste",
+        "description": "Zamanlanmış işleri sıralar: bekleyenler, zamanı geçip onay bekleyenler, son yapılanlar.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "zamanli_sil",
+        "description": "Zamanlanmış bir işi siler.",
+        "parameters": {"type": "object", "properties": {"no": {"type": "integer"}}, "required": ["no"]},
+    },
+    {
+        "name": "zamanli_calistir",
+        "description": "Zamanlanmış bir işi hemen ekibe verir; zamanı geçmiş bir iş için Çağan \"yap\" derse kullan.",
+        "parameters": {"type": "object", "properties": {"no": {"type": "integer"}}, "required": ["no"]},
+    },
+    {
         "name": "terminal_tus",
         "description": "Terminaldeki ekibe onay verir, reddeder ya da durdurur.",
         "parameters": {
@@ -168,8 +198,10 @@ class CubaTools:
         life: LifeLog | None = None,
         search: Callable[[str], Awaitable[dict]] | None = None,
         notify: Callable[[dict], None] = lambda message: None,
+        schedule: Schedule | None = None,
     ) -> None:
         self._hand_over = hand_over
+        self.schedule = schedule
         self._press = press
         self._hire = hire
         self._fire = fire
@@ -213,6 +245,8 @@ class CubaTools:
                 return await self._hire(str(args.get("ad", "")), str(args.get("gorev", "")), str(args.get("model") or "sonnet"))
             if name == "isten_cikar" and self._fire is not None:
                 return await self._fire(str(args.get("ad", "")))
+            if name.startswith("zaman") and self.schedule is not None:
+                return await self._scheduled(name, args)
             if name == "terminal_tus" and args.get("tus") in TERMINAL_KEYS:
                 self._press(TERMINAL_KEYS[args["tus"]])
                 return {"ok": True}
@@ -220,6 +254,36 @@ class CubaTools:
             logger.exception("cuba tool %s failed", name)
             return {"error": str(error)}
         return {"error": f"Bilinmeyen araç ya da eksik bilgi: {name}"}
+
+    async def _scheduled(self, name: str, args: dict) -> dict:
+        if name == "zamanla" and str(args.get("talimat", "")).strip():
+            listing = self.projects()
+            folder = find_project(listing, str(args.get("proje", "")))
+            if folder is None:
+                names = ", ".join(p["name"] for p in listing.get("projects", []))
+                return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
+            try:
+                at = parse_when(args, datetime.datetime.now())
+                project = next((p["name"] for p in listing.get("projects", []) if p["path"] == folder), folder)
+                job = self.schedule.add(at, folder, project, str(args["talimat"]).strip())
+            except ValueError as error:
+                return {"error": str(error)}
+            self._notify({"type": "schedule", "jobs": self.schedule.view()})
+            return {"ok": True, "no": job["id"], "zaman": job["at"]}
+        if name == "zamanli_liste":
+            return {"isler": [{k: j[k] for k in ("id", "at", "project", "text", "status")} for j in self.schedule.view()]}
+        job = self.schedule.get(int(args.get("no") or 0))
+        if job is None:
+            return {"error": "Bu numarada zamanlanmış iş yok."}
+        if name == "zamanli_sil":
+            self.schedule.remove(job["id"])
+        elif name == "zamanli_calistir":
+            self.schedule.mark_done(job)
+            await self._hand_over(job["text"], job["folder"])
+        else:
+            return {"error": f"Bilinmeyen araç: {name}"}
+        self._notify({"type": "schedule", "jobs": self.schedule.view()})
+        return {"ok": True}
 
     def prompt(self, diary: str = "") -> str:
         text = live_prompt(self.memory_dir, projects=self.projects(), diary=diary)
