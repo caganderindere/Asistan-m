@@ -202,6 +202,13 @@ BRANCH_TOOLS = [
      "parameters": {"type": "object", "properties": _BRANCH, "required": ["dal"]}},
 ]
 LIVE_TOOLS[0]["functionDeclarations"].extend(BRANCH_TOOLS)
+LIVE_TOOLS[0]["functionDeclarations"].append({
+    "name": "beni_ara",
+    "description": "Çağan'ın telefonunu çaldırır (Telegram araması, mesaj sesli okunur ve yazılı da gider). Yalnızca gerçekten "
+                   "acil ve Çağan seni duymuyorken: ekip onun elini gerektiren bir yerde takıldı, önemli bir hatırlatma.",
+    "parameters": {"type": "object", "properties": {"mesaj": {"type": "string", "description": "En çok iki kısa cümle."}},
+                   "required": ["mesaj"]},
+})
 
 def project_block(listing: dict) -> str:
     """The projects Cuba can hand work in, the open one marked."""
@@ -261,8 +268,10 @@ class CubaTools:
         notify: Callable[[dict], None] = lambda message: None,
         schedule: Schedule | None = None,
         office=None,
+        phone=None,
     ) -> None:
         self._hand_over = hand_over
+        self.phone = phone  # server/phone.py: rings Çağan
         self.office = office  # server/office.py: the marketing team on the free models
         self.schedule = schedule
         self._press = press
@@ -353,6 +362,8 @@ class CubaTools:
                 return await self._fire(str(args.get("ad", "")))
             if name.startswith("zaman") and self.schedule is not None:
                 return await self._scheduled(name, args)
+            if name == "beni_ara" and self.phone is not None and str(args.get("mesaj", "")).strip():
+                return await self.phone.call(str(args["mesaj"]))
             if name == "terminal_tus" and args.get("tus") in TERMINAL_KEYS:
                 self._press(TERMINAL_KEYS[args["tus"]])
                 return {"ok": True}

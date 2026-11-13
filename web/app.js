@@ -586,6 +586,11 @@ function officeView() {
   }
   const all = [...agents.values()];
   const working = all.some((a) => a.state === 'working');
+  // There is one meeting room: a meeting held for another project still fills it.
+  const meeting = base.review ? base : [...crewOf.values()].find((crew) => crew.review);
+  if (meeting && meeting !== base) {
+    return { ...base, agents: all, phase: 'review', review: meeting.review, tasks: meeting.tasks };
+  }
   return { ...base, agents: all, phase: base.phase === 'idle' && working ? 'working' : base.phase };
 }
 

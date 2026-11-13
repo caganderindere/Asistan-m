@@ -38,6 +38,7 @@ class LiveMeeting:
         self._members: list[str] = []
         self._lines: list[dict] = []
         self._speaker = ""
+        self._notes = ""  # the project's marketing work, so members speak from what was really written
 
     @property
     def is_open(self) -> bool:
@@ -47,11 +48,12 @@ class LiveMeeting:
         names = {CHAIR: "Cuba", **{m: self._workers(m).role.name for m in self._members}}
         return {"members": list(self._members), "speaker": self._speaker, "lines": list(self._lines), "names": names}
 
-    async def open(self, topic: str, members: list[str]) -> dict:
+    async def open(self, topic: str, members: list[str], notes: str = "") -> dict:
         unknown = [m for m in members if self._workers(m) is None]
         if unknown or not members:
             return {"error": f"Bu kişiler ofis ekibinde yok: {', '.join(unknown) or 'kimse seçilmedi'}."}
         self._topic, self._members, self._lines, self._speaker = topic, list(dict.fromkeys(members)), [], ""
+        self._notes = notes
         await self._show(self._state())
         return {"ok": True, "katilimcilar": self._members}
 
@@ -73,7 +75,8 @@ class LiveMeeting:
         await self._show(self._state())
         said = "\n".join(f"{self._state()['names'].get(l['who'], l['who'])}: {l['text']}" for l in self._lines)
         try:
-            answer = await worker.answer("Cuba", question, f"Toplantının konusu: {self._topic}\nŞimdiye kadar:\n{said}")
+            notes = f"Projede yazılmış pazarlama belgeleri:\n{self._notes}\n\n" if self._notes else ""
+            answer = await worker.answer("Cuba", question, f"{notes}Toplantının konusu: {self._topic}\nŞimdiye kadar:\n{said}")
         except OmniError as e:
             self._speaker = ""
             await self._show(self._state())

@@ -39,6 +39,7 @@ from server.meeting import hold_meeting
 from server.office import Office
 from server.office_bus import OfficeBus
 from server.claude_chat import ClaudeChat
+from server.phone import Phone
 from server.memory import ConversationLog, Diary, ensure_profile
 from server.supervisor import Supervisor
 from server.terminal import (
@@ -133,6 +134,7 @@ def create_app(
     life: LifeLog | None = None,
     schedule: Schedule | None = None,
     hand_over: Callable[[str, str], Awaitable[None]] | None = None,
+    phone=None,
 ) -> FastAPI:
     clients = _Clients()
     if terminals is None and terminal is not None:
@@ -575,6 +577,24 @@ def create_app(
     @team_route("state", method="GET")
     async def team_state(body: dict) -> dict:
         return team.snapshot()
+
+    @team_route("cagan")
+    async def reach_cagan(body: dict) -> dict:
+        """The team needs Çağan's own hand (a UAC prompt, a login, a decision): reach him wherever he is."""
+        text = " ".join(str(body.get("mesaj", "")).split())
+        if not text:
+            raise TeamError("Mesaj boş.")
+        folder = str(body.get("terminal") or projects.current)
+        said = f"[EKİP ÇAĞAN'I ARIYOR — {project_name(folder)}] {text}"
+        here = live is not None and live.active and not boss.away
+        if here:
+            await live.tell(said)
+        elif telegram is not None:
+            await telegram.send(said)
+        talk.add("Ekip", text, "ofis")
+        if body.get("acil") and not here and phone is not None:
+            return {"ok": True, "arama": await phone.call(f"Cuba arıyor. {project_name(folder)}: {text}")}
+        return {"ok": True, "not": "Çağan'a sesle söylendi." if here else "Çağan'a Telegram'dan yazıldı."}
 
     @team_route("terminal")
     async def terminal_reply(body: dict) -> dict:
@@ -1085,6 +1105,7 @@ def main(argv: list[str] | None = None) -> None:
 
     life = LifeLog(data_dir)
     schedule = Schedule(data_dir / "zamanli.json")
+    phone = Phone(data_dir / "arama.json")
 
     async def search(question: str) -> dict:
         from server.life import web_search
@@ -1119,7 +1140,7 @@ def main(argv: list[str] | None = None) -> None:
 
         return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire,
                          life=life, search=search if gemini_key else None, notify=notify, schedule=schedule,
-                         office=office)
+                         office=office, phone=phone)
 
     def live_voice() -> str:
         return late["app"].state.settings()["live_voice"] if "app" in late else config.live_voice
@@ -1165,7 +1186,7 @@ def main(argv: list[str] | None = None) -> None:
         config, team, projects, transcriber, speak, data_dir=data_dir, token=token, terminals=terminals,
         supervisor=supervisor, live=live, ask=ask if gemini_key else None, telegram=telegram, remote_hosts=remote,
         roster=roster, rewrite_team=rewrite_team, chat=chat, synth_as=speak_as, life=life,
-        schedule=schedule, hand_over=hand_over,
+        schedule=schedule, hand_over=hand_over, phone=phone,
     )
     late["app"] = app
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=config.port))

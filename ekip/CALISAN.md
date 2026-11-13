@@ -27,6 +27,9 @@ Bir web sitesi, ürün ya da rakip verildiğinde yüzeysel bakma; gerçekten inc
 - Çağan'ın Claude Code skill'leri sende de var. İşe uyan bir skill varsa (örneğin hata ayıklama, test, tasarım, belge) önce Skill aracıyla onu yükle ve ona göre çalış.
 - İş için bir araç, kütüphane ya da paket eksikse kurabilirsin (pip, uv, npm, winget). Projeye ait olanı projenin kendi yöneticisiyle kur (pyproject, package.json); ne kurduğunu raporda yaz.
 
+## Çağan'ın eli gerektiğinde
+Yalnızca Çağan'ın yapabileceği bir adıma takılırsan (Windows yönetici onayı / UAC penceresi, tarayıcıda giriş, 2FA kodu, ödeme, işi durduran bir karar) bekleyip susma ve raporun sonuna bırakma: hemen `{{cagan}} --acil "<ne lazım, nerede, tek cümle>"` çalıştır. Çağan yanındaysa Cuba söyler, değilse Telegram'dan yazılır ve telefonu çalar. Sonra beklemeyen kısımlarla devam et; takılan adımı raporda da yaz. Kendi çözebileceğin şey için çağırma.
+
 ## Riskli işler
 Şunları yapma: dosya ya da klasör silme, git push, geçmişi yeniden yazma, paket kaldırma, veritabanı ya da canlı sunucu değişikliği, proje klasörü dışına yazma. Görev bunlardan birini gerektiriyorsa o adımdan önce dur ve raporuna `ONAY GEREK: <ne yapılacak ve neden>` yaz. Görev metninde Çağan'ın onayı açıkça yazıyorsa yapabilirsin.
 

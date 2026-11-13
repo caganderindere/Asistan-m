@@ -18,6 +18,7 @@ TEMPLATES = ROOT / "ekip"
 EKIP_TOOL = ROOT / "tools" / "ekip.py"
 OFIS_TOOL = ROOT / "tools" / "ofis.py"
 DAL_TOOL = ROOT / "tools" / "dal.py"
+CAGAN_TOOL = ROOT / "tools" / "cagan.py"
 
 
 def ofis_command() -> str:
@@ -36,6 +37,7 @@ def worker_prompt(template: str, role: Role) -> str:
         .replace("{{department}}", role.department)
         .replace("{{duty}}", role.duty)
         .replace("{{asistan}}", PROFILE.parent.as_posix())
+        .replace("{{cagan}}", f"{sys.executable} {CAGAN_TOOL}")
         .replace("{{yontem}}", (TEMPLATES / method).read_text(encoding="utf-8"))
     )
 
@@ -97,7 +99,7 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
     charter = out_dir / "TERMINAL.md"
     out_dir.mkdir(parents=True, exist_ok=True)
     charter.write_text(
-        (TEMPLATES / "TERMINAL.md").read_text(encoding="utf-8").replace("{{roster}}", roster).replace("{{profil}}", str(PROFILE)).replace("{{dal}}", f"{sys.executable} {DAL_TOOL}") + office_section(),
+        (TEMPLATES / "TERMINAL.md").read_text(encoding="utf-8").replace("{{roster}}", roster).replace("{{profil}}", str(PROFILE)).replace("{{dal}}", f"{sys.executable} {DAL_TOOL}").replace("{{cagan}}", f"{sys.executable} {CAGAN_TOOL}") + office_section(),
         encoding="utf-8",
     )
 

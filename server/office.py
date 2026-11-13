@@ -21,6 +21,19 @@ from server.worker import OfficeWorker
 logger = logging.getLogger(__name__)
 
 
+NOTE_FILES = 4
+NOTE_CHARS = 2500
+
+
+def project_notes(folder: Path) -> str:
+    """The newest marketing documents of the project, cut short: what a meeting talks over."""
+    try:
+        files = sorted((folder / "pazarlama").glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)[:NOTE_FILES]
+    except OSError:
+        return ""
+    return "\n\n".join(f"## {f.name}\n{f.read_text(encoding='utf-8', errors='replace')[:NOTE_CHARS]}" for f in files)
+
+
 class Office:
     MEMBERS = ("pazarlama", "icerik", "sosyal")
 
@@ -102,7 +115,7 @@ class Office:
         if self._meeting.is_open:
             return {"error": "Zaten açık bir toplantı var; önce toplanti_kapat."}
         self._meeting_folder = folder
-        return await self._meeting.open(topic, members)
+        return await self._meeting.open(topic, members, project_notes(Path(folder)))
 
     async def give_floor(self, who: str, question: str) -> dict:
         if not self._meeting.is_open:

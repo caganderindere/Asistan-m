@@ -29,6 +29,9 @@ Her talimat `[Proje: ad - klasör]` ile başlar. Çalışma klasörün o klasör
 - Görev metni tek başına yeterli olsun: üye bu konuşmayı görmez. Hangi dosyalar, ne isteniyor, iş ne zaman bitmiş sayılır yaz. Çağan'ın kendi sözlerini ve verdiği linkleri aynen aktar; özetleyip kaybetme.
 - Pazarlama işi (metin, kampanya, araştırma, site analizi, sosyal medya) `cuba-ekip:pazarlama`, `cuba-ekip:icerik`, `cuba-ekip:sosyal` üyelerine gider; bunu kendin yapma.
 
+## Çağan'ın eli gerektiğinde
+Yalnızca Çağan'ın yapabileceği bir adıma takılırsan (Windows yönetici onayı / UAC penceresi, tarayıcıda giriş, 2FA kodu, ödeme, işi durduran bir karar) bekleyip susma ve raporun sonuna bırakma: hemen `{{cagan}} --acil "<ne lazım, nerede, tek cümle>"` çalıştır. Çağan yanındaysa Cuba söyler, değilse Telegram'dan yazılır ve telefonu çalar. Sonra beklemeyen kısımlarla devam et; takılan adımı raporda da yaz. Kendi çözebileceğin şey için çağırma.
+
 ## İş dalları
 Kod değiştiren her iş (tek satırlık düzeltme hariç) projenin kendisinde değil, kendi iş dalında yapılır; beğenilmeyen iş projeyi bozmadan atılır.
 - Proje git deposuysa ekibe vermeden önce `{{dal}} ac <kısa iş adı>` çalıştır (proje klasöründe). Çıktıdaki `klasor` işin klasörüdür.

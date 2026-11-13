@@ -84,3 +84,17 @@ async def test_report_is_kept_even_when_nobody_listens(tmp_path):
     await o.idle()
     kept = o.workers["pazarlama"].bus.recent("lider")
     assert [(m.sender, m.channel, m.text) for m in kept] == [("pazarlama", "rapor", "Bitti")]
+
+
+def test_meeting_notes_are_the_newest_marketing_documents(tmp_path):
+    import os
+
+    from server.office import project_notes
+
+    assert project_notes(tmp_path) == ""
+    (tmp_path / "pazarlama").mkdir()
+    (tmp_path / "pazarlama" / "eski.md").write_text("eski", encoding="utf-8")
+    os.utime(tmp_path / "pazarlama" / "eski.md", (1, 1))
+    (tmp_path / "pazarlama" / "kimlik.md").write_text("Kurumsal kimlik: spor zemini", encoding="utf-8")
+    notes = project_notes(tmp_path)
+    assert notes.startswith("## kimlik.md\nKurumsal kimlik") and "eski" in notes
