@@ -423,10 +423,11 @@ body[data-mode="terminal"] .roster { display: none; }
 .panel { display: flex; flex-direction: column; min-height: 0; padding: 14px 14px 10px; }
 .side .panel { flex: 1; overflow-y: auto; }
 .side .panel[hidden] { display: none; }
-.side-tabs { display: flex; gap: 2px; padding: 10px 10px 0; border-bottom: 1px solid var(--line); }
+.side-tabs { display: flex; gap: 2px; padding: 10px 10px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .side-tabs button {
   position: relative;
-  flex: 1;
+  flex: 1 0 auto;
+  white-space: nowrap;
   padding: 8px 2px 9px;
   background: transparent;
   border: 0;
@@ -657,7 +658,7 @@ body[data-mode="terminal"] .roster { display: none; }
 .jobs li[data-status="yapildi"] { opacity: .55; }
 .jobs p { margin: 6px 0 0; overflow-wrap: anywhere; }
 .job-head { display: flex; align-items: baseline; gap: 8px; }
-.job-head time { font: 12px var(--mono); }
+.job-head time { font: 12px var(--mono); white-space: nowrap; }
 .job-project { font-weight: 600; }
 .job-status { margin-left: auto; color: var(--muted); font-size: 11px; }
 .job-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }

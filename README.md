@@ -1,46 +1,99 @@
-# Claude Ses
+# Cuba — kişisel AI komuta merkezi
 
-Claude Code üzerinde çalışan, Türkçe konuşan eller serbest kişisel asistan.
-Sen konuşursun; asistan bilgisayarında işi yapar, planını ve notlarını tutar,
-hatırlatma kurar ve Emel'in sesiyle yanıt verir.
+Türkçe konuşan, eller serbest kişisel asistan ve ona bağlı bir yazılım ekibi.
+Sen **Cuba**'yla konuşursun (sesle, yazıyla ya da Telegram'dan); Cuba gününü, planını ve
+notlarını tutar, kod işlerini her projenin kendi terminalindeki Claude Code ekibine verir
+ve sonucu sana anlatır. Ekip ekranda gerçek bir ofiste çalışır: kim ne yazıyor, kim kiminle
+konuşuyor, canlı görürsün.
+
+![Ofis: ekip çalışırken, sağda Cuba'yla konuşma ve ekip toplantısı](docs/img/ofis.png)
+
+| Konuşma ve ekip toplantısı | Zamanlı işler |
+|---|---|
+| ![Konuşma](docs/img/konusma.png) | ![Zamanlı işler](docs/img/zamanli.png) |
+
+> Görüntüler örnek verilerle `tools\screenshots.py` ile alınır; gerçek konuşma ya da hafıza içermez.
 
 ## Başlatma
 
 - Masaüstündeki **Claude Ses** kısayoluna çift tıkla (ya da `start.cmd`).
   Ses tanıma modeli yüklenince tarayıcıda `http://127.0.0.1:8765` açılır.
-- **Küreye dokun**: günün ilk açılışıysa asistan günün planını okur, sonra dinler.
-  Konuş, susunca gönderilir; yanıt bitince yeniden dinler.
-- **Dur** düğmesi ya da `Esc` her şeyi durdurur. Claude çalışırken "dur" demek de yeter
-  (asistan konuşurken mikrofon kapalıdır; o sırada düğmeyi kullan).
-- **Yeni konuşma** sohbet geçmişini sıfırlar; plan, not ve hatırlatmalar kalır.
-- Kapatmak için küçültülmüş "Claude Ses" komut penceresini kapat. Claude da onunla kapanır.
+- **Küreye dokun** ve konuş; Cuba sesle cevap verir. Ya da alttaki kutuya yaz.
+- **Dur** düğmesi ya da `Esc` her şeyi durdurur.
+- **Yeni konuşma** sohbet geçmişini sıfırlar; plan, not ve hafıza kalır.
+- Kapatmak için küçültülmüş "Claude Ses" komut penceresini kapat; terminaller de onunla kapanır.
 
 Kısayol silinirse: `powershell -ExecutionPolicy Bypass -File D:\ClaudeSes\tools\make_shortcut.ps1`
 
-## Ekip ve ofis
+## Cuba
 
-Sen yalnızca **Takım Lideri** ile konuşursun. Lider işi dört çalışana dağıtır; her biri
-ayrı bir Claude Code sürecidir ve kendi modelinde çalışır.
+Cuba, Gemini Live üzerinde çalışan sesli asistandır ve ekibin takım lideridir. Kendinden emin
+bir müdür gibi konuşur, sana "patron" der, kendi fikrini söyler. Yaptıkları:
 
-| Departman | Çalışan | Varsayılan model | İş |
-|---|---|---|---|
-| Yönetim | Takım Lideri | `claude-fable-5-2` | Seninle konuşur, planlar, dağıtır, raporlar |
-| Mühendislik | Kıdemli Geliştirici | `claude-fable-5-2` | Zor işler |
-| Mühendislik | Geliştirici | `claude-sonnet-5-5` | Orta işler |
-| Kalite | Testçi | `claude-sonnet-5-5` | Test ve inceleme |
-| Destek | Asistan | `claude-haiku-5-5` | Basit işler |
+- **Gününü tutar.** "Bugün önce ASP Rubber testleri, sonra sınavlara çalışacağım" dersen
+  `bugun.md`'ye tarihli, sıralı bir plan yazar ve biteni işaretler. Bilgisayarı kapatıp
+  açsan da bugün konuşulanların son kısmı ve plan her bağlanışta önüne gelir; ertesi gün
+  yarım kalanları sorar.
+- **Hafıza tutar.** Senin hakkında öğrendiklerini `cagan.md`'ye, görev, takvim ve notları
+  kendi dosyalarına yazar; her gün bitince günlük sayfasını yazar.
+- **Ekibe iş verir.** Kod, proje ya da dosya işini ilgili projenin terminaline verir;
+  rapor gelince sana bir iki cümleyle anlatır.
+- **İleri zamana iş kurar.** "30 dakika sonra blog'da bağımlılıkları güncellesinler" →
+  bkz. [Zamanlı işler](#zamanlı-işler).
+- **Günlük hayat:** spor, yol, yemek, uyku kayıtları; "araçtayım", "uyuyorum" gibi durumlar;
+  hava durumu ve Google araması.
+- **Ekibi büyütür:** "Cuba, bir tasarımcı işe al" dersen yeni bir uzman alınır.
 
-- **Akış:** işi söylersin, lider planı okuyup onayını ister, "tamam" deyince ekip başlar.
-  Biten her işin raporu lidere gider; lider sana özetler.
-- **Riskli işler** (silme, `git push`, paket kurma, proje dışına yazma): çalışan durur,
-  lider sana sorar. Bu kural çalışanların talimatındadır, teknik bir kilit değildir.
-- **Projeler (sol):** Claude Code'da kullandığın klasörler listelenir; tıklayınca ekip o
-  klasöre geçer. Her projenin konuşması ve görevleri ayrı saklanır. Çalışan varken proje
-  değiştirirsen süren işler yarıda kalır.
-- **Ofis (orta):** çalışan masasında, plan onay beklerken herkes toplantı odasında,
-  işini yeni bitiren mutfakta, uzun süredir boşta olan dinlenme alanında görünür.
-  Birine tıklayınca görevi ve son yaptıkları açılır.
-- Kurallar `asistan\ASISTAN.md`, `ekip\LIDER.md` ve `ekip\CALISAN.md` dosyalarındadır.
+Sesle, yazıyla ya da Telegram'dan konuştuğun hep aynı Cuba'dır: aynı araçlar, aynı hafıza.
+Sesini Hafıza sekmesindeki **Cuba'nın sesi** listesinden seçersin (varsayılan Algenib).
+
+## Ekip
+
+Her projenin kendi terminali vardır ve orada bir Claude Code oturumu Cuba olarak çalışır.
+Ekip üyeleri o oturumun alt ajanlarıdır (`cuba-ekip:<kimlik>`):
+
+| Üye | Model | İş |
+|---|---|---|
+| Kıdemli Geliştirici | Opus | Zor işler: mimari, karmaşık hatalar, çok dosyalı değişiklikler |
+| Geliştirici | Sonnet | Orta işler: tek özellik, bilinen kalıpta kod |
+| Testçi | Sonnet | Test yazar, çalıştırır, değişiklikleri inceler |
+| Asistan | Haiku | Basit işler: arama, yeniden adlandırma, doküman |
+| İşe alınanlar | seçilen | Tasarımcı, güvenlikçi… (en fazla dört; `data\ekip.json`) |
+
+- **Token tasarrufu önce gelir.** Terminaldeki Cuba küçük işleri kendisi yapar; ekibi yalnızca
+  iş büyükse, paralel bölünebiliyorsa ya da uzmanlık gerekiyorsa çalıştırır ve işi yapabilecek
+  en ucuz üyeye verir. Bu yüzden basit işlerde masalar boş görünür; bu bilinçli bir tercih.
+- **Paralel projeler:** "BalBal'a şunu ekle" deyip ardından "Portfolyo'da şuna bak" dersen iki
+  terminal aynı anda çalışır. Çalışan projelerin noktası listede yanıp söner.
+- **Toplantılar:** bir işi iki ya da daha fazla üye yaptıysa ekip iş bitince toplanır. Toplantı
+  Gemini'de yazılır (Claude token'ı harcamaz), her üye kendi sesiyle konuşur; kararlar
+  konuşmaya ve panoya düşer, önerilen işleri Cuba sana sorar.
+- **Riskli işler** (silme, `git push`, proje dışına yazma) için ekip durup sorar; onay sesle,
+  ekrandan ya da Telegram'daki Evet/Hayır düğmesiyle verilir.
+- Ekip tüzüğü `data\terminal\TERMINAL.md`, Cuba'nın sesli talimatı `ekip\CANLI.md`'dedir.
+
+## Ofis ve pano
+
+- **Ofis (orta):** çalışan masasında, toplantıdaki toplantı odasında, işini bitiren mutfakta
+  görünür. Kod yazan üyenin masasının üstünde yazdığı kod hologram olarak akar. Birine
+  tıklayınca görevi ve son yaptıkları açılır. **Terminal** sekmesi aynı projenin ham
+  Claude Code ekranıdır.
+- **Sağ pano:** Konuşma, Akış (kim ne yapıyor, canlı), Görevler, **Zamanlı**, Çıktılar
+  (biten işlerin raporları), Proje, Hafıza.
+- Ofiste yazıcıya, panoya, saate, kitaplığa ve toplantı masasına tıklayarak ilgili sekmeyi
+  açabilirsin. Başlıktaki **Token · bugün** bugün harcanan Claude ve Gemini token'ını gösterir.
+
+## Zamanlı işler
+
+Cuba'ya "30 dakika sonra…", "saat 15:00'te…", "yarın 09:00'da…" dersen iş kaydedilir ve
+zamanı gelince o projenin terminaline, sen vermişsin gibi yazılır. Bekleme sırasında hiç
+token harcanmaz.
+
+- **Zamanlı** sekmesinde bekleyenler en yakını üstte görünür; her birini **Hemen yap** ya da
+  **Sil** düğmesiyle yönetirsin. Cuba'ya "zamanlı işleri say", "3 numarayı sil" de diyebilirsin.
+- **Zamanı geçen iş kendiliğinden yapılmaz.** Sunucu kapalıyken zamanı kaçan iş "Zamanı geçti —
+  onay bekliyor" olur; Cuba sesli konuşmadaysa sana sorar, değilse soru Telegram'a gelir.
+- Kayıtlar: `data\zamanli.json`.
 
 ## Ayarlar — `config.json` (isteğe bağlı)
 
@@ -66,6 +119,7 @@ Değişiklikten sonra uygulamayı kapatıp aç.
 |---|---|
 | `ASISTAN.md` | Asistanın kuralları ve kişiliği (düzenleyebilirsin) |
 | `cagan.md` | Cuba'nın senin hakkında öğrendikleri, bölüm bölüm (Tercihler, Projeler, İnsanlar…) |
+| `bugun.md` | Bugünün planı: ilk satır tarih, altında sıralı maddeler |
 | `gunluk\YYYY-MM-DD.md` | Her günün günlüğü: ne istendi, ne yapıldı, ne yarım kaldı |
 | `gorevler.md` | Görevler (`- [ ]` / `- [x]`) |
 | `takvim.md` | `## YYYY-MM-DD` altında randevular |
@@ -77,40 +131,8 @@ Hepsi düz metin; elle de düzenleyebilirsin — en kolayı panodaki **Hafıza**
 Cuba'yla her konuşma (sesli ya da Telegram) `data\konusmalar\` altına günlük olarak yazılır.
 Gün bitince Cuba o günün günlüğünü yazar, senin hakkında yeni öğrendiklerini `cagan.md`'nin
 uygun bölümüne ekler (hiçbir şeyi silmez) ve ertesi gün konuşmaya dünün sayfasını hatırlayarak başlar.
+Gün içinde yeniden bağlanınca (bilgisayar kapanıp açılsa da) bugünkü konuşmanın son kısmı da Cuba'ya verilir.
 Hafıza sekmesindeki **Bugünü şimdi yaz** günü beklemeden yazdırır.
-
-## Projeler ve toplantılar
-
-Her projenin kendi terminali var: Cuba'ya "BalBal'a şunu ekle" deyip ardından "Portfolyo'da
-şuna bak" dersen iki ekip aynı anda çalışır, biri ötekini durdurmaz. Proje listesinde çalışan
-projelerin noktası mor yanıp söner; ofis o an açık olan projenin ekibini gösterir, **Akış**
-sekmesi hepsini.
-
-Bir işi iki ya da daha fazla alt ajan yaptıysa ekip iş bitince toplanır. Toplantı Gemini'de
-yazılır (Claude token'ı harcamaz): ajanlar birbirine adıyla cevap verir, itirazı kime
-yapıldıysa o yanıtlar, anlaşınca biter. Kararlar konuşmaya ve panoya düşer; önerilen işleri
-Cuba sana sorar.
-
-Ofiste yazıcıya (raporlar), panoya (görünüm değiştirir: görevler, ajanlar, token, kararlar),
-saate (hafıza), kitaplığa (proje belgeleri) ve toplantı masasına (akış) tıklayabilirsin.
-Başlıktaki **Token · bugün** bugün harcanan Claude (bu bilgisayardaki tüm Claude Code
-oturumları) ve Gemini token'ını gösterir.
-
-## Tek Cuba, tek ofis
-
-Sesle, yazıyla ya da Telegram'dan konuştuğun hep aynı Cuba: aynı araçlar, aynı hafıza, günün
-tek konuşma geçmişi. Ofis açık projenin gerçek ekibini gösterir; **Terminal** sekmesi aynı
-projenin ham Claude Code ekranıdır ve oraya yazdığın doğrudan Claude Code'a gider.
-
-Cuba kendinden emin bir müdür: sana "patron" der, fikrini söyler. Sesini Hafıza sekmesindeki
-**Cuba'nın sesi** listesinden seçersin (varsayılan Algenib: kalın, pürüzlü).
-
-**Ekip büyür.** "Cuba, bir tasarımcı işe al" dersen yeni bir uzman alınır: Claude Code alt ajanı
-olur, ofiste boş masalardan birine oturur, toplantılarda kendi sesiyle konuşur (en fazla dört
-kişi; `data\ekip.json`). Kod yazan ajanın masasının üstünde yazdığı kod hologram olarak akar.
-
-**Toplantılar sesli.** Her ajan kendi sesiyle konuşur, konuşanın ağzı oynar. Ofisin üstündeki
-**Toplantı sesi** düğmesiyle kapatabilirsin.
 
 ## "Cuba" de, dinlesin
 
@@ -187,4 +209,5 @@ Günlükler: `data\remind.log` (hatırlatmalar).
 .venv\Scripts\python -m pytest -m "network or gpu" # gerçek Edge sesi ve ekran kartında Whisper
 $env:PLAYWRIGHT_BROWSERS_PATH='D:\ClaudeSes\.pw-browsers'
 .venv\Scripts\python -m pytest -m e2e -s           # gerçek Claude ile uçtan uca (uygulama kapalıyken)
+.venv\Scripts\python tools\screenshots.py          # README görüntülerini örnek verilerle yeniden al
 ```
