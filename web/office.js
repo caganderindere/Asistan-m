@@ -29,19 +29,19 @@ function windowColor(hour = new Date().getHours()) {
 }
 
 const PEOPLE = {
-  lider:       { short: 'Cuba',        color: '#FFB547', hair: '#2B211B', desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
-  kidemli:     { short: 'Kıdemli',     color: '#FF5FA2', hair: '#4A3426', desk: [120, 488], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
+  lider:       { short: 'Cuba',        color: '#FFB547', hair: '#2B211B', headset: true, desk: [165, 180], meeting: [366, 140], coffee: [1000, 84],  sofa: [930, 388],  visit: [165, 180] },
+  kidemli:     { short: 'Kıdemli',     color: '#FF5FA2', hair: '#4A3426', long: true, skin: '#D9A77E', desk: [120, 488], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
   gelistirici: { short: 'Geliştirici', color: '#4C9BFF', hair: '#1F1B18', desk: [240, 488], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
-  testci:      { short: 'Testçi',      color: '#39E09B', hair: '#6B4A2E', desk: [360, 488], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
-  asistan:     { short: 'Asistan',     color: '#FF8A3D', hair: '#3A2A20', desk: [480, 488], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
+  testci:      { short: 'Testçi',      color: '#39E09B', hair: '#6B4A2E', skin: '#F1D0AE', desk: [360, 488], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
+  asistan:     { short: 'Asistan',     color: '#FF8A3D', hair: '#3A2A20', long: true, skin: '#C99470', desk: [480, 488], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
   // The boss: not in the team's snapshots, so the office adds him itself.
   cagan:       { short: 'Çağan',       color: '#C9D6EE', hair: '#241C17', desk: [255, 110], meeting: [614, 140], coffee: [1150, 160], sofa: [1000, 465], visit: [255, 110] },
 };
 // The four empty desks new hires take, in order: where they sit, meet, drink coffee, rest, visit.
 const HIRE_SLOTS = [
-  { color: '#B07CFF', hair: '#2A1E16', desk: [120, 623], meeting: [490, 72],  coffee: [990, 130],  sofa: [960, 600],  visit: [45, 190] },
+  { color: '#B07CFF', hair: '#2A1E16', long: true, desk: [120, 623], meeting: [490, 72],  coffee: [990, 130],  sofa: [960, 600],  visit: [45, 190] },
   { color: '#FFE066', hair: '#5A3A22', desk: [240, 623], meeting: [490, 210], coffee: [1045, 130], sofa: [1030, 560], visit: [280, 190] },
-  { color: '#5CE1E6', hair: '#1B1612', desk: [360, 623], meeting: [340, 210], coffee: [1100, 140], sofa: [880, 640],  visit: [140, 262] },
+  { color: '#5CE1E6', hair: '#1B1612', skin: '#B9835D', desk: [360, 623], meeting: [340, 210], coffee: [1100, 140], sofa: [880, 640],  visit: [140, 262] },
   { color: '#FF6B6B', hair: '#3B2A1F', desk: [480, 623], meeting: [640, 210], coffee: [860, 120],  sofa: [1090, 500], visit: [190, 262] },
 ];
 // Spots where one stands; everywhere else there is a seat.
@@ -505,12 +505,35 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
     }
   }
 
+  function limb(points, width, color) {
+    ctx.beginPath();
+    points.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
+
+  function dot(x, y, r, fill) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+
   function drawPerson(p, time) {
     const walking = p.path.length > 0;
-    const seat = p.seated ? 12 : 0;
-    const bob = walking ? Math.abs(Math.sin(time / 110)) * 3 : 0;
+    const swing = walking && !calm.matches ? Math.sin(time / 110) : 0;
+    const bob = Math.abs(swing) * 2.5;
     const [fx, fy] = iso(p.x, p.y);
     const working = p.state === 'working' && !walking;
+    const skin = p.spec.skin ?? '#E8C39E';
+    // Walking up the screen shows the back; the side tells which way the face turns.
+    let away = false, side = 0;
+    if (walking) {
+      const [tx, ty] = iso(...p.path[0]);
+      away = ty < fy - .5;
+      side = Math.sign(tx - fx);
+    }
 
     ctx.beginPath();
     ctx.ellipse(fx, fy, 17, 9, 0, 0, Math.PI * 2);
@@ -526,25 +549,131 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    if (!p.seated) drawCyl({ cx: p.x, cy: p.y, r: 6.5, z0: 0, h: 16, color: '#141B2B' });      // legs
-    const torso = { cx: p.x, cy: p.y, r: 8.5, z0: (p.seated ? seat : 16) + bob, h: 22, color: p.spec.color };
-    drawCyl(torso);
-    const [hx, hy] = iso(p.x, p.y, torso.z0 + torso.h + 7);
-    ctx.beginPath();
-    ctx.arc(hx, hy, 9, 0, Math.PI * 2);
-    ctx.fillStyle = '#E8C39E';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(hx, hy - 1.5, 9.2, Math.PI * 1.02, Math.PI * 1.98);
-    ctx.fillStyle = p.spec.hair;
-    ctx.fill();
-    if (p.talking) {
-      const open = calm.matches ? 1.6 : 0.6 + Math.abs(Math.sin(time / 90)) * 2.4;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const hip = (p.seated ? 12 : 16) + bob;
+    const waist = fy - hip, top = waist - 22;
+
+    // Legs: bent forward on a seat, swinging while walking.
+    for (const s of [-1, 1]) {
+      const foot = p.seated
+        ? [fx + s * 4.5, fy + 1]
+        : [fx + s * 3.5 + s * swing * 3.5 * (side || 1), fy - Math.max(0, s * swing) * 2];
+      const knee = p.seated ? [[fx + s * 4.5, fy - 9]] : [];
+      limb([[fx + s * 3.5, waist], ...knee, foot], 5.5, '#1A2236');
       ctx.beginPath();
-      ctx.ellipse(hx + 2.5, hy + 4, 2.8, open, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#5A1E1E';
+      ctx.ellipse(foot[0] + (side || s), foot[1] + 1, 3.4, 1.9, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#0B0F18';
       ctx.fill();
     }
+
+    // Torso: broad at the shoulders, its right side in shadow.
+    ctx.beginPath();
+    ctx.moveTo(fx - 7, waist);
+    ctx.lineTo(fx - 9, top + 5);
+    ctx.quadraticCurveTo(fx - 9, top, fx - 4, top);
+    ctx.lineTo(fx + 4, top);
+    ctx.quadraticCurveTo(fx + 9, top, fx + 9, top + 5);
+    ctx.lineTo(fx + 7, waist);
+    ctx.quadraticCurveTo(fx, waist + 3, fx - 7, waist);
+    ctx.fillStyle = p.spec.color;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = shade(p.spec.color, .78);
+    ctx.fillRect(fx + 2.5, top - 1, 9, 30);
+    ctx.restore();
+    if (!away) poly([[fx - 3.5, top], [fx, top + 4.5], [fx + 3.5, top]], skin);
+
+    // Arms: typing at the desk, a cup at the coffee machine, a hand up while talking, swinging on the way.
+    const sleeve = shade(p.spec.color, .88);
+    const typing = calm.matches ? 0 : Math.sin(time / 70);
+    const wave = calm.matches ? 0 : Math.sin(time / 160) * 2;
+    const cup = p.spot === 'coffee' && !walking;
+    for (const s of [-1, 1]) {
+      let arm;
+      if (working && p.seated) arm = [[fx + s * 8.5, top + 3], [fx + s * 10, top + 12], [fx + s * 4, top + 14 + s * typing * 1.3]];
+      else if (p.talking && s === 1) arm = [[fx + 8.5, top + 3], [fx + 13, top + 4], [fx + 14 + wave, top - 4]];
+      else if (cup && s === -1) arm = [[fx - 8.5, top + 3], [fx - 10.5, top + 12], [fx - 4.5, top + 9]];
+      else if (walking) arm = [[fx + s * 9, top + 3], [fx + s * 10, top + 10], [fx + s * 9.5 - s * swing * 4 * (side || 1), top + 17]];
+      else arm = [[fx + s * 9, top + 3], [fx + s * 10.5, top + 11], [fx + s * 10, top + 18]];
+      limb(arm, 4.5, sleeve);
+      const [ax, ay] = arm.at(-1);
+      dot(ax, ay, 2.4, skin);
+      if (cup && s === -1) {
+        ctx.fillStyle = '#F4F7FF';
+        ctx.fillRect(ax - 2.5, ay - 5, 5, 5.5);
+      }
+    }
+
+    // Neck and head.
+    limb([[fx, top + 1], [fx, top - 3]], 5, shade(skin, .88));
+    const [hx, hy] = [fx, top - 10];
+    if (p.spec.long) {
+      ctx.beginPath();
+      ctx.roundRect(hx - 10.5, hy - 8, 21, 18, 6);
+      ctx.fillStyle = p.spec.hair;
+      ctx.fill();
+    }
+    for (const s of [-1, 1]) dot(hx + s * 8.8, hy + 1, 2.3, skin);
+    dot(hx, hy, 9, skin);
+    if (away) dot(hx, hy - .5, 9.4, p.spec.hair);
+    else {
+      ctx.beginPath();
+      ctx.arc(hx, hy - 1.5, 9.4, Math.PI * .95, Math.PI * 2.05);
+      ctx.fillStyle = p.spec.hair;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(hx - 2.5 + side, hy - 5.5, 5.5, 2.6, -.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // The face: eyes that blink now and then, brows, cheeks and a mouth that shows the mood.
+      const look = side * 1.2;
+      p.blinkAt ??= [...p.id].reduce((sum, c) => sum + c.charCodeAt(0), 0) * 97 % 4200;
+      const blink = !calm.matches && (time + p.blinkAt) % 4200 < 130;
+      for (const s of [-1, 1]) {
+        const ex = hx + s * 3.3 + look;
+        if (blink) limb([[ex - 1.4, hy + .8], [ex + 1.4, hy + .8]], 1.2, '#1B1B24');
+        else {
+          ctx.beginPath();
+          ctx.ellipse(ex, hy + .5, 1.4, 1.9, 0, 0, Math.PI * 2);
+          ctx.fillStyle = '#1B1B24';
+          ctx.fill();
+          dot(ex + .5, hy - .2, .55, '#FFFFFF');
+        }
+        const frown = p.state === 'error' ? -s * .8 : working ? s * .4 : 0;
+        limb([[hx + s * 1.8 + look, hy - 3 - frown], [hx + s * 4.9 + look, hy - 3.6 + frown]], 1.2, p.spec.hair);
+        ctx.globalAlpha = .3;
+        dot(hx + s * 5.6 + look, hy + 3.4, 1.8, '#FF7A8A');
+        ctx.globalAlpha = 1;
+      }
+      ctx.beginPath();
+      if (p.talking) {
+        const open = calm.matches ? 1.6 : 0.6 + Math.abs(Math.sin(time / 90)) * 2.4;
+        ctx.ellipse(hx + look, hy + 4.8, 2.6, open, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#5A1E1E';
+        ctx.fill();
+      } else {
+        if (p.state === 'error') ctx.arc(hx + look, hy + 7.2, 2.6, Math.PI * 1.2, Math.PI * 1.8);
+        else if (working) { ctx.moveTo(hx + look - 1.8, hy + 4.8); ctx.lineTo(hx + look + 1.8, hy + 4.8); }
+        else ctx.arc(hx + look, hy + 3, 2.8, Math.PI * .18, Math.PI * .82);
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = '#7A3B2E';
+        ctx.stroke();
+      }
+    }
+    if (p.spec.headset) {
+      ctx.beginPath();
+      ctx.arc(hx, hy, 10.5, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = '#2B3448';
+      ctx.stroke();
+      for (const s of [-1, 1]) dot(hx + s * 9.6, hy + 1, 2.6, '#2B3448');
+      if (!away) limb([[hx + 9.6, hy + 2], [hx + 6, hy + 7], [hx + 3, hy + 6.5]], 1.2, '#2B3448');
+    }
+    ctx.restore();
     p.head = [hx, hy];
   }
 
