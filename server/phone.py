@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -52,6 +53,9 @@ class Phone:
         except httpx.HTTPError as e:
             logger.warning("phone call failed: %s", e)
             return {"error": "Arama servisine ulaşılamadı."}
-        if response.status_code >= 400 or "error" in response.text.lower()[:300]:
-            return {"error": f"Arama başarısız: {response.text[:200]}"}
+        # The service answers 200 with a log of its steps; a failure is an "Error:" line somewhere in it.
+        plain = " ".join(re.sub(r"<[^>]+>", " ", response.text).split())
+        if response.status_code >= 400 or "error:" in plain.lower():
+            reason = plain[plain.lower().find("error:"):][:300] if "error:" in plain.lower() else plain[:200]
+            return {"error": f"Arama başarısız: {reason}"}
         return {"ok": True, "not": "Telefonu çalıyor; yazılı kopyası Telegram'a da gitti."}

@@ -80,3 +80,11 @@ async def test_cuba_can_ring(tmp_path):
     tools = CubaTools(hand_over, lambda keys: None, tmp_path, phone=phone)
     assert (await tools.run("beni_ara", {"mesaj": "Toplantı 5 dakika sonra"}))["ok"]
     assert phone.calls == ["Toplantı 5 dakika sonra"]
+
+
+async def test_an_error_late_in_the_service_log_is_a_failure(tmp_path):
+    (tmp_path / "arama.json").write_text(json.dumps({"telegram": "@cagan"}), encoding="utf-8")
+    log = "<p>Checking Authorization...</p>" + "x " * 300 + "<p>Error: Someone reported CallMeBot as spammer.</p> End."
+    _, transport = recording(log)
+    result = await Phone(tmp_path / "arama.json", transport).call("deneme")
+    assert "spammer" in result["error"]
