@@ -140,7 +140,12 @@ function furniture() {
     { face: 'south', a0: 840, a1: 920, z0: 34, z1: 78, color: glass },
     { face: 'south', a0: 980, a1: 1140, z0: 52, z1: 82, color: glass },                      // above the counter
   ];
-  west[0].decor = [{ face: 'east', a0: 70, a1: 170, z0: 34, z1: 76, color: '#CFE9FF' }];     // Yönetim whiteboard
+  // Yönetim whiteboard: the day's plan, a few ticked rows on it.
+  west[0].decor = [{ face: 'east', a0: 70, a1: 170, z0: 34, z1: 76, color: '#CFE9FF' },
+    ...[0, 1, 2, 3].flatMap((i) => [
+      { face: 'east', a0: 80, a1: 87, z0: 65 - i * 9, z1: 71 - i * 9, color: i < 2 ? '#39E09B' : '#7F8DA6' },
+      { face: 'east', a0: 92, a1: 152 - i * 13, z0: 67 - i * 9, z1: 69 - i * 9, color: '#3A4766' },
+    ])];
   west[1].decor = [
     { face: 'east', a0: 75, a1: 165, z0: 34, z1: 78, color: glass },
     { face: 'east', a0: 215, a1: 305, z0: 34, z1: 78, color: glass },
@@ -298,6 +303,7 @@ const OBJECTS = [
   ['clock', 282, 22, 92, 'Takvim ve hafıza'],
   ['shelf', 105, 34, 62, 'Proje belgeleri'],
   ['table', 490, 140, 30, 'Akış: kim ne dedi'],
+  ['plan', 20, 140, 55, 'Günlük plan: bugün yapılacaklar'],
 ];
 // What the board on the meeting room wall shows; clicking it moves to the next.
 const BOARD_MODES = ['GÖREV PANOSU', 'AJANLAR', 'TOKEN · BUGÜN', 'SON KARARLAR'];
@@ -327,6 +333,8 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
   let usage = null; // today's tokens: { claude: {input, output, cache}, gemini: {input, output} }
   let decisions = []; // what the last meeting decided
   let objectHits = []; // [id, x, y, radius] on screen, from the last draw
+  let plan = null; // the day's to-do list: { done, total }
+  const screens = fixed.filter((t) => t.screen);
 
   function spotOf(agent, snapshot) {
     // Sent somewhere by name: a person goes there and stays until sent back.
@@ -441,6 +449,15 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
     const z1 = t.z0 + t.h;
     const south = t.screen && lit.has(t.screen) ? '#5FE3FF' : shade(t.color, .84);
     poly([iso(t.x0, t.y1, z1), iso(t.x1, t.y1, z1), iso(t.x1, t.y1, t.z0), iso(t.x0, t.y1, t.z0)], south);
+    if (t.screen && lit.has(t.screen)) {
+      // Code scrolls up a screen someone works at.
+      const roll = calm.matches ? 0 : Math.floor(performance.now() / 300);
+      for (let i = 0; i < 5; i += 1) {
+        const n = (roll + i) * 7 + t.x0;
+        const [from, to, z] = [t.x0 + 4 + (n % 3) * 4, t.x0 + 14 + (n % 3) * 4 + (n * 13) % 22, z1 - 5 - i * 4];
+        poly([iso(from, t.y1, z), iso(to, t.y1, z), iso(to, t.y1, z - 1.6), iso(from, t.y1, z - 1.6)], i % 2 ? '#0E5F7A' : '#13405E');
+      }
+    }
     poly([iso(t.x1, t.y0, z1), iso(t.x1, t.y1, z1), iso(t.x1, t.y1, t.z0), iso(t.x1, t.y0, t.z0)], shade(t.color, .68));
     poly([iso(t.x0, t.y0, z1), iso(t.x1, t.y0, z1), iso(t.x1, t.y1, z1), iso(t.x0, t.y1, z1)], t.color);
     if (t.wall) {
@@ -814,9 +831,19 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
       return lines;
     };
     objectHits = OBJECTS.map(([id, x, y, z]) => [id, ...onScreen(iso(x, y, z)), Math.max(14, 30 * scale)]);
+    // Each taken desk's screen opens its owner's computer.
+    for (const t of screens) {
+      const owner = t.screen.startsWith('slot') ? Object.values(people).find((p) => `slot${p.slot}` === t.screen)?.id : t.screen;
+      if (people[owner]) objectHits.push([`pc:${owner}`, ...onScreen(iso((t.x0 + t.x1) / 2, t.y1, t.z0 + 12)), Math.max(10, 18 * scale)]);
+    }
     // The board and clock hang on the wall, behind whatever people say.
     drawBoard(onScreen);
     drawClock(onScreen);
+    if (plan?.total) {
+      const [x, y] = onScreen(iso(20, 140, 86));
+      ctx.font = '600 11px Bahnschrift, "Segoe UI", sans-serif';
+      pill(x, y, `📋 Plan ${plan.done}/${plan.total}`, HUD, INK, plan.done === plan.total ? '#39E09B' : NEON);
+    }
     const byHeight = Object.values(people).filter((p) => p.head).sort((a, b) => a.head[1] - b.head[1]);
     for (const p of byHeight) {
       const [x, y] = onScreen(p.head);
@@ -984,7 +1011,8 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
     const box = canvas.getBoundingClientRect();
     const [x, y] = [event.clientX - box.left, event.clientY - box.top];
     const hit = objectHits.find(([, ox, oy, r]) => Math.hypot(x - ox, y - oy) < r);
-    return hit ? OBJECTS.find(([id]) => id === hit[0]) : null;
+    if (!hit) return null;
+    return OBJECTS.find(([id]) => id === hit[0]) ?? [hit[0], 0, 0, 0, `${people[hit[0].slice(3)]?.spec.short} bilgisayarı: ne yaptığını gör`];
   }
 
   function personAt(event) {
@@ -1072,5 +1100,6 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
     print() { printedAt = performance.now(); dirty = true; },
     setUsage(next) { usage = next; dirty = true; },
     setDecisions(next) { decisions = next; dirty = true; },
+    setPlan(next) { plan = next; dirty = true; },
   };
 }

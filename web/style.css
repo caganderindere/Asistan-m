@@ -662,3 +662,60 @@ body[data-mode="terminal"] .roster { display: none; }
 .job-project { font-weight: 600; }
 .job-status { margin-left: auto; color: var(--muted); font-size: 11px; }
 .job-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+
+/* ── Dialogs: the day's plan, an agent's computer ────────── */
+
+dialog {
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-top: 3px solid var(--who, var(--neon));
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / .6);
+  padding: 16px 18px;
+  width: min(460px, calc(100vw - 32px));
+}
+dialog::backdrop { background: rgb(4 6 15 / .6); backdrop-filter: blur(3px); }
+dialog h3 { margin: 0; font: 600 15px var(--display); letter-spacing: .06em; color: var(--who, var(--ink)); }
+dialog .meta { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+dialog .meta:empty { display: none; }
+
+.plan ul { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 6px; }
+.plan li { display: flex; align-items: flex-start; gap: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.plan li.empty { color: var(--muted); font-size: 13px; }
+.plan label { flex: 1; display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 14px; line-height: 1.45; }
+.plan input[type="checkbox"] { accent-color: #39E09B; width: 16px; height: 16px; margin-top: 2px; flex: none; }
+.plan li.done span { color: var(--muted); text-decoration: line-through; }
+.plan .drop { background: transparent; border: 0; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 4px; }
+.plan .drop:hover { color: var(--error); }
+.plan form { display: flex; gap: 8px; }
+.plan form input { flex: 1; min-width: 0; }
+
+.pc { width: min(860px, calc(100vw - 32px)); padding: 0; overflow: hidden; }
+.pc header { display: flex; align-items: center; gap: 12px; padding: 10px 44px 10px 14px; background: var(--hull); border-bottom: 1px solid var(--line); position: relative; }
+.pc .dots { display: flex; gap: 6px; }
+.pc .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
+.pc .dots i:first-child { background: var(--who, var(--neon)); }
+.pc-state { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+.pc-state[data-state="working"] { color: var(--speak); }
+.pc-state[data-state="error"] { color: var(--error); }
+.pc-activity { margin: 0; padding: 8px 14px; font: 12.5px var(--mono); color: var(--who, var(--neon)); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.pc-body { display: grid; grid-template-columns: 3fr 2fr; min-height: 0; }
+.pc-body section { min-width: 0; display: flex; flex-direction: column; }
+.pc-body section + section { border-left: 1px solid var(--line); background: #060A14; }
+.pc-tab { margin: 0; padding: 6px 12px; font: 11px var(--mono); color: var(--muted); background: var(--panel-2); border-bottom: 1px solid var(--line); }
+#pcCode { margin: 0; padding: 10px 0; height: min(52vh, 420px); overflow: auto; font: 12px/1.6 var(--mono); counter-reset: line; }
+#pcCode span { display: block; padding-right: 12px; white-space: pre; }
+#pcCode span::before { counter-increment: line; content: counter(line); display: inline-block; width: 34px; padding-right: 10px; text-align: right; color: var(--line-2); }
+#pcCode em { display: block; padding: 0 14px; color: var(--muted); font-style: normal; }
+#pcLog { margin: 0; padding: 10px 12px 10px 28px; height: min(52vh, 420px); overflow: auto; font: 11.5px/1.6 var(--mono); color: #9FE8C4; overflow-wrap: anywhere; }
+#pcLog li::marker { content: '› '; color: var(--muted); }
+#pcLog li:last-child::after { content: '▋'; margin-left: 4px; animation: caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #pcLog li:last-child::after { animation: none; } }
+@media (max-width: 640px) {
+  .pc-body { grid-template-columns: 1fr; }
+  .pc-body section + section { border-left: 0; border-top: 1px solid var(--line); }
+  #pcCode, #pcLog { height: 30vh; }
+}
+.pc-open { margin-top: 12px; width: 100%; }

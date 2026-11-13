@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=12">
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
   <!-- Silero VAD, the speech detector Pipecat and LiveKit use, running in the browser. -->
@@ -76,6 +76,7 @@
         <p id="agentWhere"></p>
         <p class="task" id="agentTask"></p>
         <ol id="agentLog"></ol>
+        <button class="pc-open" id="agentPc" type="button">🖥 Bilgisayarına bak</button>
       </aside>
     </div>
 
@@ -163,6 +164,29 @@
     </section>
   </aside>
 
+  <dialog class="plan" id="planDialog" aria-labelledby="planTitle">
+    <button class="close" type="button" data-close aria-label="Kapat">×</button>
+    <h3 id="planTitle">Günlük plan</h3>
+    <p class="meta" id="planDate"></p>
+    <ul id="planList"></ul>
+    <form id="planAdd"><input id="planInput" placeholder="Yeni iş ekle…" autocomplete="off" aria-label="Yeni iş"><button>Ekle</button></form>
+    <p class="meta" id="planState" role="status"></p>
+  </dialog>
+
+  <dialog class="pc" id="pcDialog" aria-labelledby="pcTitle">
+    <header>
+      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <h3 id="pcTitle"></h3>
+      <span class="pc-state" id="pcState"></span>
+      <button class="close" type="button" data-close aria-label="Kapat">×</button>
+    </header>
+    <p class="pc-activity" id="pcActivity"></p>
+    <div class="pc-body">
+      <section><p class="pc-tab" id="pcFile"></p><pre id="pcCode"></pre></section>
+      <section><p class="pc-tab">Terminal</p><ol id="pcLog"></ol></section>
+    </div>
+  </dialog>
+
   <template id="turnTemplate">
     <article class="turn">
       <p class="you"></p>
@@ -174,6 +198,6 @@
     </article>
   </template>
 
-  <script type="module" src="/static/app.js?v=13"></script>
+  <script type="module" src="/static/app.js?v=14"></script>
 </body>
 </html>

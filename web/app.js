@@ -1,4 +1,4 @@
-import { createOffice } from './office.js';
+import { createOffice } from './office.js?v=2';
 import { createLive } from './live.js?v=7';
 import { createTerminalView } from './terminal.js?v=7';
 import { monitorSilence } from './vad.js?v=7';
@@ -12,7 +12,11 @@ const conn = $('conn');
 const history = $('history');
 const turnTemplate = $('turnTemplate');
 const OBJECT_PANES = { printer: 'outputs', clock: 'memory', shelf: 'project', table: 'feed', board: 'tasks' };
-const openObject = (id) => { if (OBJECT_PANES[id]) showPane(OBJECT_PANES[id]); };
+const openObject = (id) => {
+  if (id === 'plan') openPlan();
+  else if (id.startsWith('pc:')) openComputer(id.slice(3));
+  else if (OBJECT_PANES[id]) showPane(OBJECT_PANES[id]);
+};
 const office = createOffice($('office'), (id) => { if (id !== 'cagan') selectAgent(id); }, openObject);
 const terminal = createTerminalView($('terminalWrap'));
 // The terminal's own office: Claude Code at the lead's desk, its subagents at the others.
@@ -570,6 +574,7 @@ function showTeam(snapshot) {
   showHud();
   office.update(snapshot);
   showRoster(snapshot);
+  if ($('pcDialog').open) showComputer();
   showLiveMeeting();
   const question = $('question');
   question.hidden = !snapshot.question;
@@ -1350,10 +1355,118 @@ document.addEventListener('keydown', (e) => {
   // Ctrl+K: type to Cuba without reaching for the mouse.
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('sayText').focus(); }
   // Inside the terminal Esc belongs to Claude Code, which stops its own turn with it.
-  if (e.key === 'Escape' && !$('terminalWrap').contains(document.activeElement)) stopEveryone();
+  if (e.key === 'Escape' && !document.querySelector('dialog[open]') && !$('terminalWrap').contains(document.activeElement)) stopEveryone();
 });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+// ── The day's plan, on the Yönetim whiteboard ───────────────
+
+const PLAN_ITEM = /^(\s*(?:\d+\.|[-*])\s*)\[( |x|X)\]\s*(.*)$/;
+let planText = '';
+
+async function loadPlan() {
+  const data = await fetch('/api/memory').then((r) => r.json()).catch(() => null);
+  if (!data) return;
+  planText = data.files['bugun.md'] ?? '';
+  showPlan();
+}
+
+function planItems() {
+  return planText.split('\n').flatMap((line, at) => {
+    const match = line.match(PLAN_ITEM);
+    return match ? [{ at, done: match[2] !== ' ', text: match[3] }] : [];
+  });
+}
+
+function showPlan() {
+  const items = planItems();
+  office.setPlan({ done: items.filter((i) => i.done).length, total: items.length });
+  const today = new Date().toLocaleDateString('sv-SE');
+  const day = planText.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? today;
+  $('planDate').textContent = new Date(`${day}T12:00`).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })
+    + (day === today ? '' : ' · eski plan');
+  $('planList').replaceChildren(...(items.length ? items.map((item) => {
+    const li = document.createElement('li');
+    li.classList.toggle('done', item.done);
+    const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: item.done });
+    box.addEventListener('change', () => {
+      const lines = planText.split('\n');
+      lines[item.at] = lines[item.at].replace(/\[( |x|X)\]/, box.checked ? '[x]' : '[ ]');
+      savePlan(lines);
+    });
+    const label = document.createElement('label');
+    label.append(box, Object.assign(document.createElement('span'), { textContent: item.text }));
+    const drop = Object.assign(document.createElement('button'), { type: 'button', className: 'drop', textContent: '×', title: 'Sil' });
+    drop.addEventListener('click', () => savePlan(planText.split('\n').filter((_, i) => i !== item.at)));
+    li.append(label, drop);
+    return li;
+  }) : [Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Bugün için plan yok. Ekle ya da Cuba\'ya söyle.' })]));
+}
+
+async function savePlan(lines) {
+  // Numbered items stay numbered 1, 2, 3 after one is removed.
+  let n = 0;
+  planText = lines.map((line) => line.replace(/^(\s*)\d+\.(\s*\[)/, (_, a, b) => `${a}${++n}.${b}`)).join('\n');
+  showPlan();
+  const response = await fetch('/api/memory', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'bugun.md', text: planText }),
+  }).catch(() => null);
+  $('planState').textContent = response?.ok ? '' : 'Kaydedilemedi.';
+}
+
+$('planAdd').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $('planInput').value.trim();
+  if (!text) return;
+  $('planInput').value = '';
+  const lines = planText.trimEnd() ? planText.trimEnd().split('\n') : [new Date().toLocaleDateString('sv-SE')];
+  lines.push(`${planItems().length + 1}. [ ] ${text}`);
+  savePlan(lines);
+});
+
+function openPlan() {
+  $('planState').textContent = '';
+  $('planDialog').showModal();
+  loadPlan();
+}
+
+// ── An agent's computer: what it is doing right now ─────────
+
+let computerOf = null;
+
+function openComputer(id) {
+  computerOf = id;
+  showComputer();
+  $('pcDialog').showModal();
+}
+
+function showComputer() {
+  const agent = [...(team?.agents ?? [])].find((a) => a.id === computerOf);
+  if (!agent) return;
+  $('pcDialog').style.setProperty('--who', office.color(agent.id));
+  $('pcTitle').textContent = `${agent.name} · bilgisayar`;
+  $('pcState').textContent = { working: 'çalışıyor', error: 'hata' }[agent.state] ?? 'boşta';
+  $('pcState').dataset.state = agent.state;
+  $('pcActivity').textContent = agent.activity || 'Ekran açık, şu an elinde iş yok.';
+  $('pcFile').textContent = agent.file || 'Düzenleyici';
+  $('pcCode').replaceChildren(...(agent.code
+    ? agent.code.split('\n').map((line) => Object.assign(document.createElement('span'), { textContent: line || ' ' }))
+    : [Object.assign(document.createElement('em'), { textContent: 'Şu an kod yazmıyor.' })]));
+  const log = $('pcLog');
+  log.replaceChildren(...(agent.log ?? []).map((line) => Object.assign(document.createElement('li'), { textContent: line })));
+  log.scrollTop = log.scrollHeight;
+}
+
+$('agentPc').addEventListener('click', () => openComputer(selectedAgent));
+for (const button of document.querySelectorAll('dialog [data-close]')) {
+  button.addEventListener('click', () => button.closest('dialog').close());
+}
+for (const dialog of document.querySelectorAll('dialog')) {
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); }); // a click on the backdrop
+}
+loadPlan();
+setInterval(loadPlan, 120_000); // Cuba writes the plan too
 
 setState('idle');
 connect();
