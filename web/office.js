@@ -5,14 +5,14 @@
 
 const COS = Math.cos(Math.PI / 6);
 const SIN = 0.5;
-const VIEW = { x: -610, y: -126, w: 1635, h: 1102 }; // what the projection covers, in drawing units
+const VIEW = { x: -740, y: -126, w: 1765, h: 1177 }; // what the projection covers, in drawing units
 const COFFEE_BREAK_S = 90;
 const WALK_SPEED = 240; // plan units per second
 const INK = '#E6F1FF';
 const GLASS = '#B5DAEE'; // a marker: windows look out into space
 const NEON = '#4FD8FF';
 const HUD = 'rgb(8 14 28 / .9)';
-const MIN_ZOOM = .6, MAX_ZOOM = 3.2, FIT_ZOOM = 1.1; // the station fills the view at FIT_ZOOM
+const MIN_ZOOM = .6, MAX_ZOOM = 3.2, FIT_ZOOM = 1; // the station fills the view at FIT_ZOOM
 const PRINT_MS = 3500;
 const QUOTE_MS = 4000;
 // What people say as they take on work and hand it back.
@@ -33,6 +33,9 @@ const PEOPLE = {
   kidemli:     { short: 'Kıdemli',     color: '#FF5FA2', hair: '#4A3426', long: true, skin: '#D9A77E', desk: [120, 488], meeting: [428, 88],  coffee: [1052, 84],  sofa: [824, 465],  visit: [70, 240] },
   gelistirici: { short: 'Geliştirici', color: '#4C9BFF', hair: '#1F1B18', desk: [240, 488], meeting: [552, 88],  coffee: [1104, 84],  sofa: [824, 525],  visit: [115, 248] },
   testci:      { short: 'Testçi',      color: '#39E09B', hair: '#6B4A2E', skin: '#F1D0AE', desk: [360, 488], meeting: [428, 192], coffee: [1016, 222], sofa: [824, 585],  visit: [215, 248] },
+  pazarlama:   { short: 'Pazarlamacı', color: '#F0ABFC', hair: '#3B2418', long: true, skin: '#E2B08A', desk: [120, 778], meeting: [345, 80],  coffee: [760, 150],  sofa: [930, 794],  visit: [45, 120] },
+  icerik:      { short: 'İçerikçi',    color: '#A3E635', hair: '#20170F', desk: [240, 778], meeting: [635, 80],  coffee: [840, 150],  sofa: [990, 794],  visit: [285, 140] },
+  sosyal:      { short: 'Sosyalci',    color: '#2DD4BF', hair: '#7A4A26', long: true, desk: [360, 778], meeting: [490, 250], coffee: [800, 196],  sofa: [1050, 794], visit: [230, 205] },
   asistan:     { short: 'Asistan',     color: '#FF8A3D', hair: '#3A2A20', long: true, skin: '#C99470', desk: [480, 488], meeting: [552, 192], coffee: [1108, 222], sofa: [1000, 388], visit: [260, 240] },
   // The boss: not in the team's snapshots, so the office adds him itself.
   cagan:       { short: 'Çağan',       color: '#C9D6EE', hair: '#241C17', desk: [255, 110], meeting: [614, 140], coffee: [1150, 160], sofa: [1000, 465], visit: [255, 110] },
@@ -48,6 +51,7 @@ const HIRE_SLOTS = [
 const STANDING = new Set([
   '1000,84', '1052,84', '1104,84', '1150,160',
   '70,240', '115,248', '215,248', '260,240', '255,110',
+  '760,150', '840,150', '800,196', '45,120', '285,140', '230,205',
   ...HIRE_SLOTS.flatMap((s) => [s.meeting, s.coffee, s.visit].map(String)),
 ]);
 const BOSS = { id: 'cagan', name: 'Çağan', state: 'idle', activity: '', seconds: 0, log: [] };
@@ -61,20 +65,25 @@ const ROOMS = [
   { name: 'Mutfak',         x: 700, y: 20,  w: 480,  h: 250, floor: 'tile',    sign: ['north', 718], door: [[940, 255], [940, 310]] },
   { name: '',               x: 20,  y: 270, w: 1160, h: 80,  floor: '#0F1828', sign: null,          door: null },
   // One open room: engineering desks on the left, the lounge on the right.
-  { name: 'Mühendislik',    x: 20,  y: 350, w: 1160, h: 350, floor: '#131D34', sign: ['west', 684], door: [[600, 368], [600, 310]] },
+  { name: 'Yazılım',        x: 20,  y: 350, w: 1160, h: 500, floor: '#131D34', sign: ['west', 610], door: [[600, 368], [600, 310]] },
+  // Behind glass at the back of the open floor; its door opens onto the lane by the printer.
+  { name: 'Pazarlama',      x: 20,  y: 640, w: 560,  h: 210, floor: '#1A1733', sign: ['west', 840], door: [[555, 715], [605, 715]], via: 'Yazılım' },
   // Not a room of its own: the lounge's part of the floor, with its own colour and name.
-  { name: 'Dinlenme',       x: 760, y: 350, w: 420,  h: 350, floor: '#181834', sign: ['floor', 880, 676], door: null, zone: true },
+  { name: 'Dinlenme',       x: 760, y: 350, w: 420,  h: 500, floor: '#181834', sign: ['floor', 880, 676], door: null, zone: true },
 ];
 
 // [x1, y1, x2, y2, height]; the gaps between them are the doors.
 const TALL = 112, LOW = 28, CUT = 9;
 const WALLS = [
-  [20, 20, 1180, 20, TALL], [20, 20, 20, 285, TALL], [20, 335, 20, 700, TALL],
-  [1180, 20, 1180, 700, CUT], [20, 700, 1180, 700, CUT],
+  [20, 20, 1180, 20, TALL], [20, 20, 20, 285, TALL], [20, 335, 20, 850, TALL],
+  [1180, 20, 1180, 850, CUT], [20, 850, 1180, 850, CUT],
   [20, 270, 140, 270, LOW], [190, 270, 460, 270, LOW], [520, 270, 910, 270, LOW], [970, 270, 1180, 270, LOW],
   [20, 350, 570, 350, LOW], [630, 350, 920, 350, LOW], [980, 350, 1180, 350, LOW],
   [300, 20, 300, 270, LOW], [700, 20, 700, 270, LOW],
 ];
+
+// Glass partitions between the teams' desks: [x1, y1, x2, y2]; the gap on the east side is the door.
+const GLASS_WALLS = [[20, 640, 580, 640], [580, 640, 580, 690], [580, 740, 580, 850]];
 
 const iso = (x, y, z = 0) => [(x - y) * COS, (x + y) * SIN - z];
 // [x, y, size, brightness] as fractions of the canvas, the same on every draw.
@@ -129,6 +138,10 @@ function furniture() {
     const wall = x1 === x2 ? box(x1 - 3, y1, 6, y2 - y1, h, '#2A3550') : box(x1, y1 - 3, x2 - x1, 6, h, '#2A3550');
     wall.wall = true;
     if (h !== TALL) wall.color = h === CUT ? '#1C2438' : '#26314A';
+  }
+  for (const [x1, y1, x2, y2] of GLASS_WALLS) {
+    if (x1 === x2) box(x1 - 2, y1, 4, y2 - y1, 64, '#7FDBFF', { glass: true });
+    else box(x1, y1 - 2, x2 - x1, 4, 64, '#7FDBFF', { glass: true });
   }
   const north = things[0];
   const west = [things[1], things[2]];
@@ -185,7 +198,7 @@ function furniture() {
   cyl(891, 287, 7, 16, '#4FD8FF', { z0: 34 });
   plant(560, 288, .85);
 
-  // Mühendislik: two rows of desks side by side; the back row waits for new hires.
+  // Yazılım: two rows of desks side by side; the back row waits for new hires.
   books(box(40, 358, 100, 16, 46, '#1E2840'), 100, 8);
   const row = (owners, y) => owners.forEach((owner, i) => {
     desk(owner, 60 + i * 120, y, 116, 55);
@@ -194,14 +207,24 @@ function furniture() {
   row(['kidemli', 'gelistirici', 'testci', 'asistan'], 410);
   // A screen lights up once someone takes the desk.
   row(['slot0', 'slot1', 'slot2', 'slot3'], 545);
-  // Reports come out here.
-  box(582, 410, 36, 28, 30, '#3A4766', { printer: true });
-  const cabinets = box(580, 560, 46, 84, 42, '#2C3A52');
+  // Pazarlama, behind the glass.
+  row(['pazarlama', 'icerik', 'sosyal'], 700);
+  box(420, 690, 120, 14, 58, '#1E2840').decor = [                         // mood board
+    { face: 'south', a0: 8, a1: 40, z0: 20, z1: 48, color: '#F0ABFC' },
+    { face: 'south', a0: 46, a1: 74, z0: 26, z1: 52, color: '#A3E635' },
+    { face: 'south', a0: 80, a1: 112, z0: 18, z1: 44, color: '#2DD4BF' },
+  ];
+  plant(530, 820, 1.1); plant(45, 820);
+  // Reports come out here, off the lane to the marketing door.
+  box(640, 410, 36, 28, 30, '#3A4766', { printer: true });
+  const cabinets = box(640, 520, 46, 84, 42, '#2C3A52');
   cabinets.decor = [0, 1, 2].map((i) => ({ face: 'east', a0: 4 + i * 27, a1: 26 + i * 27, z0: 6, z1: 36, color: '#3E4E6E' }));
   // Plants mark where work ends and the lounge begins.
   plant(728, 400, 1.1); plant(728, 500, 1.1); plant(728, 600, 1.1);
 
   // Dinlenme
+  box(890, 812, 190, 12, 32, '#2B3F6B'); box(890, 776, 190, 36, 14, '#3D5A94');   // sofa at the back
+  plant(728, 720, 1.1); plant(1150, 830, 1.1);
   box(792, 430, 12, 190, 32, '#2B3F6B'); box(804, 430, 38, 190, 14, '#3D5A94');   // sofa by the wall
   box(895, 358, 140, 12, 32, '#2B3F6B'); box(895, 370, 140, 36, 14, '#3D5A94');   // sofa under the window
   box(900, 470, 110, 54, 13, '#33415E');                                  // coffee table
@@ -210,7 +233,7 @@ function furniture() {
   cyl(1090, 610, 18, 15, '#FFB547');                                      // pouf
   box(1146, 440, 24, 130, 20, '#1E2840');                                 // TV unit
   box(1160, 452, 4, 106, 46, '#081020', { z0: 20 });
-  plant(1152, 378, 1.15); plant(1150, 676, 1.1);
+  plant(1152, 378, 1.15); plant(1150, 690, 1.1);
 
   things.forEach((thing, index) => { thing.order = index; });
   return things;
@@ -258,16 +281,23 @@ function paintOrder(fixed, after, people) {
 
 // ── Getting from one place to another ───────────────────────
 
-const roomOf = ([x, y]) => ROOMS.find((r) => !r.zone && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+// The innermost room: Pazarlama lies inside Yazılım and comes after it.
+const roomOf = ([x, y]) => ROOMS.filter((r) => !r.zone && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h).at(-1);
+
+/** The corners from inside *room* out to the corridor, through the room it opens into first. */
+function exits(room) {
+  if (!room?.door) return [];
+  return [room.door[0], room.door[1], ...exits(ROOMS.find((r) => r.name === room.via))];
+}
 
 /** The corners to walk through from *from* to *to*: out of one door, along the corridor, in at the other. */
 function route(from, to) {
   const a = roomOf(from);
   const b = roomOf(to);
   if (!a || !b || a === b) return [to];
-  const out = a.door ? [a.door[0], a.door[1]] : [];
-  const into = b.door ? [b.door[1], b.door[0]] : [];
-  return [...out, ...into, to];
+  if (b.via === a.name) return [b.door[1], b.door[0], to];
+  if (a.via === b.name) return [a.door[0], a.door[1], to];
+  return [...exits(a), ...exits(b).reverse(), to];
 }
 
 function shorten(text, max = 30) {
@@ -298,7 +328,7 @@ function describe(agent, spot, snapshot) {
 
 // Things in the office that open something when clicked: [id, plan x, y, height, what it does].
 const OBJECTS = [
-  ['printer', 600, 424, 40, 'Çıktılar: ekibin raporları'],
+  ['printer', 658, 424, 40, 'Çıktılar: ekibin raporları'],
   ['board', 470, 20, 96, 'Pano: görünümü değiştir'],
   ['clock', 282, 22, 92, 'Takvim ve hafıza'],
   ['shelf', 105, 34, 62, 'Proje belgeleri'],
@@ -446,6 +476,22 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
   }
 
   function drawBox(t) {
+    if (t.glass) {
+      // A pane of glass: faint, with a bright top edge.
+      ctx.globalAlpha = .16;
+      poly([iso(t.x0, t.y1, t.h), iso(t.x1, t.y1, t.h), iso(t.x1, t.y1, 0), iso(t.x0, t.y1, 0)], t.color);
+      poly([iso(t.x1, t.y0, t.h), iso(t.x1, t.y1, t.h), iso(t.x1, t.y1, 0), iso(t.x1, t.y0, 0)], t.color);
+      ctx.globalAlpha = .8;
+      ctx.beginPath();
+      ctx.moveTo(...iso(t.x0, t.y1, t.h));
+      ctx.lineTo(...iso(t.x1, t.y1, t.h));
+      ctx.lineTo(...iso(t.x1, t.y0, t.h));
+      ctx.strokeStyle = t.color;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      return;
+    }
     const z1 = t.z0 + t.h;
     const south = t.screen && lit.has(t.screen) ? '#5FE3FF' : shade(t.color, .84);
     poly([iso(t.x0, t.y1, z1), iso(t.x1, t.y1, z1), iso(t.x1, t.y1, t.z0), iso(t.x0, t.y1, t.z0)], south);
@@ -776,7 +822,7 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
   }
 
   function drawSlab() {
-    const [x0, y0, x1, y1, drop] = [17, 17, 1183, 703, 18];
+    const [x0, y0, x1, y1, drop] = [17, 17, 1183, 853, 18];
     poly([iso(x0, y1), iso(x1, y1), iso(x1, y1, -drop), iso(x0, y1, -drop)], '#0F1626');
     poly([iso(x1, y0), iso(x1, y1), iso(x1, y1, -drop), iso(x1, y0, -drop)], '#0A0F1B');
     poly([iso(x0, y0), iso(x1, y0), iso(x1, y1), iso(x0, y1)], '#111A2C');
@@ -858,7 +904,7 @@ export function createOffice(canvas, onSelect, onObject = () => {}) {
       if (p.code && !p.path.length) drawCode(x, above - (p.says ? 74 : 16), p);
     }
     if (performance.now() - printedAt < PRINT_MS) {
-      const [x, y] = onScreen(iso(600, 424, 60));
+      const [x, y] = onScreen(iso(658, 424, 60));
       ctx.font = '600 11px Bahnschrift, "Segoe UI", sans-serif';
       pill(x, y, '🖨 Rapor hazır', HUD, INK, NEON);
     }

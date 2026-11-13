@@ -27,6 +27,9 @@ DEFAULT_MODELS: dict[str, str] = {
     "gelistirici": "claude-sonnet-5-5",
     "testci": "claude-sonnet-5-5",
     "asistan": "claude-haiku-5-5",
+    "pazarlama": "claude-sonnet-5-5",
+    "icerik": "claude-sonnet-5-5",
+    "sosyal": "claude-haiku-5-5",
 }
 
 

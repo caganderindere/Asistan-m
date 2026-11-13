@@ -29,9 +29,10 @@ PERMISSION_LINE = "Onayın gerekiyor patron. Evet ya da hayır de."
 AGENT_TOOLS = ("Task", "Agent")
 # The office's desks: the lead's for Claude itself, the others for its subagents.
 LEAD_DESK = "lider"
-SUB_DESKS = ("kidemli", "gelistirici", "testci", "asistan")
+SUB_DESKS = ("kidemli", "gelistirici", "testci", "asistan", "pazarlama", "icerik", "sosyal")
 LOG_LINES = 30
-ROLE_NAMES = {"kidemli": "Kıdemli", "gelistirici": "Geliştirici", "testci": "Testçi", "asistan": "Asistan"}
+ROLE_NAMES = {"kidemli": "Kıdemli", "gelistirici": "Geliştirici", "testci": "Testçi", "asistan": "Asistan",
+              "pazarlama": "Pazarlamacı", "icerik": "İçerikçi", "sosyal": "Sosyalci"}
 # Tools that write code: what they write floats over the writer's desk.
 CODE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 CODE_LINES = 40

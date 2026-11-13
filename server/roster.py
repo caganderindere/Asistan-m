@@ -36,6 +36,9 @@ FOUNDERS = (
     Member("gelistirici", "Geliştirici", "kodu yazar", "sonnet", "en-US-BrianMultilingualNeural", "+0Hz", "+6%"),
     Member("testci", "Testçi", "test eder ve doğrular", "sonnet", "tr-TR-EmelNeural"),
     Member("asistan", "Asistan", "belge, araştırma ve küçük işler", "haiku", "en-US-AvaMultilingualNeural"),
+    Member("pazarlama", "Pazarlamacı", "pazarlama stratejisi ve kampanya", "sonnet", "en-US-EmmaMultilingualNeural", "+2Hz"),
+    Member("icerik", "İçerikçi", "metin, blog ve SEO içeriği", "sonnet", "tr-TR-AhmetNeural", "+8Hz", "+4%"),
+    Member("sosyal", "Sosyalci", "sosyal medya paylaşımları", "haiku", "tr-TR-EmelNeural", "+10Hz", "+8%"),
 )
 HIRE_VOICES = (
     ("de-DE-FlorianMultilingualNeural", "-2Hz"), ("en-US-EmmaMultilingualNeural", "+0Hz"),

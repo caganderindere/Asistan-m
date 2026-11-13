@@ -1,5 +1,5 @@
 import { createOffice } from './office.js?v=2';
-import { createLive } from './live.js?v=7';
+import { createLive } from './live.js?v=8';
 import { createTerminalView } from './terminal.js?v=7';
 import { monitorSilence } from './vad.js?v=7';
 
@@ -68,7 +68,7 @@ let away = false; // Cuba decides in the user's place
 let hushed = false; // the user talked over Cuba: the rest of this turn is not read out
 // Louder than ordinary speech detection, so Cuba's own voice cannot interrupt it.
 const BARGE_IN_RMS = 0.03;
-let mode = 'office'; // office: what is typed goes to Cuba; terminal: straight to Claude Code
+let mode = 'assistant'; // assistant, office: what is typed goes to Cuba; terminal: straight to Claude Code
 
 // Sentences are fetched as soon as they arrive and played strictly in order.
 const speechQueue = [];
@@ -80,6 +80,7 @@ function setState(next, text) {
   state = next;
   orb.dataset.state = next === 'transcribing' ? 'working' : next;
   statusEl.textContent = text ?? STATUS[next] ?? '';
+  $('asstStatus').textContent = statusEl.textContent;
   orb.setAttribute('aria-label', handsFree ? 'Sesli konuşmayı bitir' : 'Sesli konuşmayı başlat');
 }
 
@@ -1168,8 +1169,11 @@ $('sayForm').addEventListener('submit', (e) => {
 function showMode(next) {
   mode = next;
   document.body.dataset.mode = next;
+  $('tabAssistant').setAttribute('aria-selected', String(next === 'assistant'));
   $('tabOffice').setAttribute('aria-selected', String(next === 'office'));
   $('tabTerminal').setAttribute('aria-selected', String(next === 'terminal'));
+  $('assistantWrap').hidden = next !== 'assistant';
+  if (next === 'assistant' && !viz.frame) viz.frame = requestAnimationFrame(drawAssistant);
   $('officeWrap').hidden = next !== 'office';
   $('terminalWrap').hidden = next !== 'terminal';
   $('sayText').placeholder = next === 'terminal' ? "Claude Code'a doğrudan yaz" : "Ya da Cuba'ya yaz";
@@ -1347,6 +1351,7 @@ for (const tab of document.querySelectorAll('.side-tabs button')) {
   tab.addEventListener('click', () => showPane(tab.dataset.pane));
 }
 
+$('tabAssistant').addEventListener('click', () => showMode('assistant'));
 $('tabOffice').addEventListener('click', () => showMode('office'));
 $('tabTerminal').addEventListener('click', () => showMode('terminal'));
 
@@ -1386,7 +1391,14 @@ function showPlan() {
   const day = planText.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? today;
   $('planDate').textContent = new Date(`${day}T12:00`).toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })
     + (day === today ? '' : ' · eski plan');
-  $('planList').replaceChildren(...(items.length ? items.map((item) => {
+  $('asstPlanDate').textContent = $('planDate').textContent;
+  $('asstPlanCount').textContent = items.length ? `${items.filter((i) => i.done).length}/${items.length}` : '';
+  $('planList').replaceChildren(...planNodes(items));
+  $('asstPlanList').replaceChildren(...planNodes(items));
+}
+
+function planNodes(items) {
+  return items.length ? items.map((item) => {
     const li = document.createElement('li');
     li.classList.toggle('done', item.done);
     const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: item.done });
@@ -1401,7 +1413,7 @@ function showPlan() {
     drop.addEventListener('click', () => savePlan(planText.split('\n').filter((_, i) => i !== item.at)));
     li.append(label, drop);
     return li;
-  }) : [Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Bugün için plan yok. Ekle ya da Cuba\'ya söyle.' })]));
+  }) : [Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Bugün için plan yok. Ekle ya da Cuba\'ya söyle.' })];
 }
 
 async function savePlan(lines) {
@@ -1468,5 +1480,156 @@ for (const dialog of document.querySelectorAll('dialog')) {
 loadPlan();
 setInterval(loadPlan, 120_000); // Cuba writes the plan too
 
+// ── Assistant view: the orb, its ripples, the plan when the talk turns to it ──
+
+const VOICE_COLORS = { idle: '#5C6B88', listening: '#4FD8FF', working: '#A77BFF', speaking: '#39E09B', error: '#FF4D5E' };
+// Talk about the day's work opens the plan beside the orb.
+const PLAN_TALK = /plan|görev|yapılacak|yapacağım|todo|to-do|ajanda|iş listesi|bugün ne/i;
+const viz = { frame: 0, bins: new Uint8Array(64), level: new Float32Array(64), waves: [], waveAt: 0, said: '', clock: '' };
+const calmMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+function showAsstPlan(open) {
+  $('assistantWrap').classList.toggle('plan-open', open);
+  $('asstPlanToggle').setAttribute('aria-expanded', String(open));
+  if (open) loadPlan();
+}
+$('asstPlanToggle').addEventListener('click', () => showAsstPlan(!$('assistantWrap').classList.contains('plan-open')));
+$('asstPlanClose').addEventListener('click', () => showAsstPlan(false));
+$('asstPlanEdit').addEventListener('click', openPlan);
+$('asstOrb').addEventListener('click', () => orb.click());
+
+/** The words of the latest turn under the orb; talk of plans opens the plan. */
+function followTalk() {
+  const last = history.lastElementChild;
+  const you = last?.querySelector('.you')?.textContent ?? '';
+  const reply = last?.querySelector('.reply')?.textContent ?? '';
+  if (you + reply === viz.said) return;
+  const fresh = (you + reply).slice(viz.said.length);
+  viz.said = you + reply;
+  $('asstYou').textContent = you;
+  $('asstCuba').textContent = reply.length > 260 ? `…${reply.slice(-260)}` : reply;
+  // Only live talk counts: history loading on connect is no reason to open it.
+  if ((state !== 'idle' || live.active) && (PLAN_TALK.test(fresh) || PLAN_TALK.test(you))) showAsstPlan(true);
+}
+
+function followClock() {
+  const now = new Date();
+  const time = now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  if (time === viz.clock) return;
+  viz.clock = time;
+  $('asstTime').textContent = time;
+  $('asstDate').textContent = now.toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
+  $('asstSituation').textContent = $('hudSituationBox').hidden ? '' : $('hudSituation').textContent;
+}
+
+function drawAssistant(time) {
+  if (mode !== 'assistant') { viz.frame = 0; return; }
+  viz.frame = requestAnimationFrame(drawAssistant);
+  followTalk();
+  followClock();
+  const canvas = $('asstViz');
+  const box = canvas.getBoundingClientRect();
+  const ratio = devicePixelRatio || 1;
+  if (canvas.width !== Math.round(box.width * ratio) || canvas.height !== Math.round(box.height * ratio)) {
+    canvas.width = Math.round(box.width * ratio);
+    canvas.height = Math.round(box.height * ratio);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, box.width, box.height);
+  const button = $('asstOrb').getBoundingClientRect();
+  const [cx, cy, r] = [button.left - box.left + button.width / 2, button.top - box.top + button.height / 2, button.width / 2];
+  const voiceState = orb.dataset.state;
+  const color = VOICE_COLORS[voiceState] ?? VOICE_COLORS.idle;
+  const still = calmMotion.matches;
+  const heard = live.active && live.spectrum(viz.bins);
+
+  // How loud each band is: the real voice when there is one, a made-up one while the classic voice speaks.
+  let sum = 0;
+  for (let i = 0; i < 64; i += 1) {
+    const target = heard ? viz.bins[1 + Math.floor(i * 36 / 64)] / 255
+      : voiceState === 'speaking' && !still ? .2 + .45 * Math.abs(Math.sin(time / 170 + i * .7) * Math.sin(time / 93 + i * 1.3))
+        : voiceState === 'listening' ? .05 + .03 * Math.sin(time / 400 + i) : .02;
+    viz.level[i] += (target - viz.level[i]) * (still ? 1 : .3);
+    sum += viz.level[i];
+  }
+  const loud = sum / 64;
+
+  // A glow behind everything, brighter as the voice gets louder.
+  const glow = ctx.createRadialGradient(cx, cy, r * .5, cx, cy, r * 3);
+  glow.addColorStop(0, `${color}${Math.round(40 + loud * 120).toString(16).padStart(2, '0')}`);
+  glow.addColorStop(1, `${color}00`);
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, box.width, box.height);
+
+  // Ripples leave the orb on loud moments.
+  if (!still && loud > .18 && time - viz.waveAt > 240) { viz.waves.push({ r: r * 1.05, a: .7 }); viz.waveAt = time; }
+  viz.waves = viz.waves.filter((w) => w.a > 0);
+  for (const w of viz.waves) {
+    w.r += 1.8;
+    w.a -= .009;
+    ctx.beginPath();
+    ctx.arc(cx, cy, w.r, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = Math.max(0, w.a);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Bars around the orb, mirrored left and right.
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 128; k += 1) {
+    const v = viz.level[k < 64 ? k : 127 - k];
+    const angle = (k / 128) * Math.PI * 2 - Math.PI / 2;
+    const [from, to] = [r + 10, r + 12 + v * r * 1.1];
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(angle) * from, cy + Math.sin(angle) * from);
+    ctx.lineTo(cx + Math.cos(angle) * to, cy + Math.sin(angle) * to);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = .35 + v * .65;
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Slow HUD rings, one each way.
+  for (const [radius, speed, dash] of [[r * 1.95, 1, [3, 12]], [r * 2.3, -.6, [40, 18, 4, 18]]]) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(still ? 0 : time / 9000 * speed);
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = .35;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // The orb itself, swelling a little with the voice.
+  const size = r * (.92 + loud * .18);
+  const sphere = ctx.createRadialGradient(cx - size * .3, cy - size * .35, size * .1, cx, cy, size);
+  sphere.addColorStop(0, '#FFFFFF');
+  sphere.addColorStop(.25, color);
+  sphere.addColorStop(1, '#050A18');
+  ctx.beginPath();
+  ctx.arc(cx, cy, size, 0, Math.PI * 2);
+  ctx.fillStyle = sphere;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 30 + loud * 60;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  if (voiceState === 'working' && !still) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, size + 5, time / 300, time / 300 + Math.PI * 1.2);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+}
+
 setState('idle');
+showMode('assistant');
 connect();

@@ -85,7 +85,7 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
     plugin = out_dir / PLUGIN
     (plugin / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     (plugin / ".claude-plugin" / "plugin.json").write_text(
-        json.dumps({"name": PLUGIN, "version": "1.0.0", "description": "Cuba'nın yazılım ekibi"}), encoding="utf-8"
+        json.dumps({"name": PLUGIN, "version": "1.0.0", "description": "Cuba'nın yazılım ve pazarlama ekibi"}), encoding="utf-8"
     )
     agents = plugin / "agents"
     agents.mkdir(exist_ok=True)

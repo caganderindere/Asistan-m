@@ -29,7 +29,8 @@ registerProcessor('cuba-capture', Capture);
  */
 export function createLive({ onEvent, onSpeaking }) {
   let ws = null;
-  let mic = null; // { context, source, node }
+  let mic = null; // { context, source, node, ear }
+  let voice = null; // an analyser on what Cuba says, for the assistant view
   let player = null; // AudioContext at 24 kHz
   let playing = new Set();
   let nextAt = 0;
@@ -42,7 +43,12 @@ export function createLive({ onEvent, onSpeaking }) {
     for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 0x8000;
     const source = player.createBufferSource();
     source.buffer = audio;
-    source.connect(player.destination);
+    if (!voice) {
+      voice = player.createAnalyser();
+      voice.fftSize = 128;
+      voice.connect(player.destination);
+    }
+    source.connect(voice);
     // Chunks are laid end to end; a gap means Cuba had paused, so start now.
     nextAt = Math.max(nextAt, player.currentTime + 0.03);
     source.start(nextAt);
@@ -75,11 +81,22 @@ export function createLive({ onEvent, onSpeaking }) {
     const node = new AudioWorkletNode(context, 'cuba-capture');
     node.port.onmessage = (e) => { if (ws?.readyState === WebSocket.OPEN) ws.send(e.data); };
     source.connect(node);
-    mic = { context, source, node };
+    const ear = context.createAnalyser();
+    ear.fftSize = 128;
+    source.connect(ear);
+    mic = { context, source, node, ear };
   }
 
   return {
     get active() { return ws !== null; },
+
+    /** Fill *bins* with Cuba's voice, or the microphone while Cuba is quiet; false when there is neither. */
+    spectrum(bins) {
+      const node = playing.size ? voice : mic?.ear;
+      if (!node) return false;
+      node.getByteFrequencyData(bins);
+      return true;
+    },
 
     async start(stream) {
       if (ws) return;

@@ -51,6 +51,12 @@ ROLES: tuple[Role, ...] = (
     Role("testci", "Testçi", "Kalite", "Test yazar ve çalıştırır, başkalarının değişikliklerini inceler."),
     Role("asistan", "Asistan", "Destek",
          "Basit işler: dosya ve metin arama, yeniden adlandırma, doküman, biçimlendirme."),
+    Role("pazarlama", "Pazarlama Uzmanı", "Pazarlama",
+         "Pazarlama stratejisi: hedef kitle, konumlandırma, kampanya planı, rakip ve pazar araştırması."),
+    Role("icerik", "İçerik Yazarı", "Pazarlama",
+         "Metin işleri: web sitesi ve ürün metinleri, blog yazıları, e-posta, SEO uyumlu içerik."),
+    Role("sosyal", "Sosyal Medya Uzmanı", "Pazarlama",
+         "Sosyal medya: paylaşım metinleri ve takvimi, hashtag, trend takibi, kısa reklam metinleri."),
 )
 
 

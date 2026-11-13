@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 BRIEFING_PROMPT = "Günün planını kısaca özetle."
 # The spots in web/office.js; "" sends someone back to their own routine.
 OFFICE_PLACES = {"desk", "meeting", "coffee", "sofa", "visit", ""}
-OFFICE_PEOPLE = {"lider", "kidemli", "gelistirici", "testci", "asistan", "cagan"}
+OFFICE_PEOPLE = {"lider", "kidemli", "gelistirici", "testci", "asistan", "pazarlama", "icerik", "sosyal", "cagan"}
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 USAGE_EVERY_S = 30
 DIARY_EVERY_S = 600
