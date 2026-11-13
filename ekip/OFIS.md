@@ -15,6 +15,6 @@ Kimse işi yokken masasında beklemez: boşta olan bir süre sonra mutfağa, son
 
 Birini bir yere göndermek ya da kendin gitmek için şu komutu çalıştır (komutu yazıldığı gibi kullan):
 `{{ofis}} git <yer> <kim> [<kim> ...]`
-Yerler: masa, toplanti, mutfak, dinlenme, yonetim, serbest (kendi düzenine döner). Kişiler: cuba, kidemli, gelistirici, testci, asistan, cagan, herkes, ekip.
+Yerler: masa, toplanti, mutfak, dinlenme, yonetim, serbest (kendi düzenine döner). Kişiler: cuba, kidemli, gelistirici, testci, asistan, pazarlama, icerik, sosyal, cagan, herkes, ekip (yazılım ekibi), pazarlamaekibi.
 Örnek: Çağan "Cuba, toplantı odasına geç; Geliştirici ve Kıdemli de gelsin" derse `{{ofis}} git toplanti cuba gelistirici kidemli`. Toplantı bitince `{{ofis}} git serbest herkes`.
 Kimin nerede olduğunu görmek için: `{{ofis}} nerede`.

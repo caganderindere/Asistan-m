@@ -4,7 +4,8 @@
     ofis.py nerede                       who has been sent where
 
 Places: masa, toplanti, mutfak, dinlenme, yonetim (Cuba's room), serbest (back to their own routine).
-People: cuba, kidemli, gelistirici, testci, asistan, cagan (or "herkes").
+People: cuba, kidemli, gelistirici, testci, asistan, pazarlama, icerik, sosyal, cagan
+(or "herkes", "ekip" for the software team, "pazarlamaekibi").
 Exit codes as in ekip.py: 0 done, 2 refused, 3 server unreachable.
 """
 
@@ -19,8 +20,13 @@ PEOPLE = {
     "cuba": "lider", "lider": "lider", "kidemli": "kidemli", "kıdemli": "kidemli",
     "gelistirici": "gelistirici", "geliştirici": "gelistirici", "testci": "testci", "testçi": "testci",
     "asistan": "asistan", "cagan": "cagan", "çağan": "cagan", "ben": "cagan",
+    "pazarlama": "pazarlama", "pazarlamaci": "pazarlama", "pazarlamacı": "pazarlama",
+    "icerik": "icerik", "içerik": "icerik", "icerikci": "icerik", "içerikçi": "icerik",
+    "sosyal": "sosyal", "sosyalci": "sosyal",
 }
-EVERYONE = ["lider", "kidemli", "gelistirici", "testci", "asistan", "cagan"]
+SOFTWARE = ["kidemli", "gelistirici", "testci", "asistan"]
+MARKETING = ["pazarlama", "icerik", "sosyal"]
+EVERYONE = ["lider", *SOFTWARE, *MARKETING, "cagan"]
 PLACES = {
     "masa": "desk", "masasina": "desk", "toplanti": "meeting", "toplantı": "meeting",
     "mutfak": "coffee", "dinlenme": "sofa", "yonetim": "visit", "yönetim": "visit", "serbest": "",
@@ -52,12 +58,12 @@ def main(argv: list[str] | None = None) -> None:
     who: list[str] = []
     for name in args.kim:
         name = name.lower().strip(",")
-        if name in ("herkes", "ekip"):
-            who += EVERYONE if name == "herkes" else EVERYONE[1:5]
+        if name in ("herkes", "ekip", "pazarlamaekibi"):
+            who += {"herkes": EVERYONE, "ekip": SOFTWARE, "pazarlamaekibi": MARKETING}[name]
         elif name in PEOPLE:
             who.append(PEOPLE[name])
         else:
-            print(f"Bilinmeyen kişi: {name}. Kişiler: cuba, kidemli, gelistirici, testci, asistan, cagan")
+            print(f"Bilinmeyen kişi: {name}. Kişiler: cuba, kidemli, gelistirici, testci, asistan, pazarlama, icerik, sosyal, cagan")
             sys.exit(2)
     call("move", {"who": who, "where": where})
     print(f"{', '.join(dict.fromkeys(args.kim))} {SPOKEN[where]} gidiyor.")
