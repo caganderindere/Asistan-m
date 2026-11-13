@@ -27,6 +27,27 @@ def office_section() -> str:
     return (TEMPLATES / "OFIS.md").read_text(encoding="utf-8").replace("{{ofis}}", ofis_command())
 
 
+def worker_prompt(template: str, role: Role) -> str:
+    """The worker template filled in for *role*, with its department's way of working."""
+    method = "YONTEM_PAZARLAMA.md" if role.department == "Pazarlama" else "YONTEM_YAZILIM.md"
+    return (
+        template.replace("{{name}}", role.name)
+        .replace("{{department}}", role.department)
+        .replace("{{duty}}", role.duty)
+        .replace("{{yontem}}", (TEMPLATES / method).read_text(encoding="utf-8"))
+    )
+
+
+def office_prompt(role: Role) -> str:
+    """A worker on the free models: same charter, but colleagues to ask and the office's own tools."""
+    text = worker_prompt((TEMPLATES / "CALISAN.md").read_text(encoding="utf-8"), role)
+    text = text.replace("- Soru soramazsın, yanıtlayan kimse yok. Belirsizlikte en makul varsayımı yap ve raporda belirt.",
+                        "- Belirsizlikte önce bölüm arkadaşına `mesaj_at` ile danış; yine belirsizse makul varsayımı yap ve raporda belirt.")
+    head, _, rest = text.partition("## Yetenekler ve araçlar")
+    _, _, rest = rest.partition("\n## ")
+    return f"{head}{(TEMPLATES / 'OFIS_CALISANI.md').read_text(encoding='utf-8')}\n## {rest}"
+
+
 def write_prompts(out_dir: Path, models: Mapping[str, str]) -> dict[str, Path]:
     """Return the prompt file of every role, freshly written into *out_dir*."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -41,11 +62,7 @@ def write_prompts(out_dir: Path, models: Mapping[str, str]) -> dict[str, Path]:
 
     paths: dict[str, Path] = {}
     for role in ROLES:
-        text = lead if role.id == LEAD else (
-            worker.replace("{{name}}", role.name)
-            .replace("{{department}}", role.department)
-            .replace("{{duty}}", role.duty)
-        )
+        text = lead if role.id == LEAD else worker_prompt(worker, role)
         paths[role.id] = out_dir / f"{role.id}.md"
         paths[role.id].write_text(text, encoding="utf-8")
     return paths
@@ -93,12 +110,7 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
         old.unlink()  # someone who left the team is no longer a subagent
     worker = (TEMPLATES / "CALISAN.md").read_text(encoding="utf-8")
     for role in workers:
-        body = (
-            worker.replace("{{name}}", role.name)
-            .replace("{{department}}", role.department)
-            .replace("{{duty}}", role.duty)
-            .replace("takım liderinden `[GÖREV #numara]` başlığıyla gelir", "takım lideri Cuba'dan gelir")
-        )
+        body = worker_prompt(worker, role).replace("takım liderinden `[GÖREV #numara]` başlığıyla gelir", "takım lideri Cuba'dan gelir")
         (agents / f"{role.id}.md").write_text(
             f"---\nname: {role.id}\n"
             f"description: {role.name} ({role.department}). {role.duty}\n"
