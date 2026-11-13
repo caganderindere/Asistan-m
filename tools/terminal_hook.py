@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.request
 
@@ -53,6 +54,60 @@ def result_text(response) -> str:
     return ""
 
 
+# The terminal runs with every permission; these are the lock on that. A block is never run,
+# whoever asks; an ask stops for Çağan (away, Cuba answers for him as with any permission).
+_ROOTS = r"""(?:/|~|\$HOME|\$env:USERPROFILE|[a-z]:[\\/]?|/[a-z]/?|\*|\.\.?/?)(?:\s|$|["'])"""
+BLOCK = [
+    (rf"\brm\s+(?:-\w+\s+)*-\w*[rR]\w*\s+(?:-\w+\s+)*[\"']?{_ROOTS}", "diskin ya da ev klasörünün tamamını silmek"),
+    (rf"Remove-Item\b.*-Recurse.*\s[\"']?{_ROOTS}|Remove-Item\s+[\"']?{_ROOTS}.*-Recurse", "diskin ya da ev klasörünün tamamını silmek"),
+    (r"\bformat\s+[a-z]:|\bdiskpart\b|\bmkfs\b|\bdd\s+if=.*\bof=/dev/|Format-Volume|Clear-Disk", "diski biçimlendirmek"),
+    (r"\bgit\s+push\b.*(?:\s--force\b|\s-f\b|\s--force-with-lease\b|\s\+\S)", "git geçmişini zorla ezmek (force push)"),
+    (r"\b(?:shutdown|Stop-Computer|Restart-Computer)\b|\bbcdedit\b|\breg\s+delete\s+HKLM", "bilgisayarı ya da sistemi kurcalamak"),
+    (r"\bDROP\s+DATABASE\b", "veritabanını silmek"),
+]
+ASK = [
+    (r"\bgit\s+push\b", "git push"),
+    (r"\bgit\s+(?:reset\s+--hard|clean\s+-\w*f|checkout\s+--\s|restore\s+\.|branch\s+-D|stash\s+(?:drop|clear))", "kaydedilmemiş işi ya da dalı silebilecek git komutu"),
+    (r"\brm\s+(?:-\w+\s+)*-\w*[rR]|\bRemove-Item\b.*-Recurse|\brmdir\s+/s|\brd\s+/s|\bdel\s+/s", "klasör silmek"),
+    (r"\b(?:npm|pnpm|yarn)\s+publish\b|\btwine\s+upload\b|\bgh\s+(?:release\s+create|pr\s+merge|repo\s+delete)", "yayınlamak"),
+    (r"\b(?:vercel\b.*--prod|firebase\s+deploy|wrangler\s+deploy|netlify\s+deploy|terraform\s+(?:apply|destroy)|kubectl\s+delete|docker\s+system\s+prune)", "canlıya dağıtmak ya da altyapıyı değiştirmek"),
+    (r"\b(?:ssh|scp|sftp)\s", "uzak sunucuya bağlanmak"),
+    (r"\bDROP\s+TABLE\b|\bTRUNCATE\b|\bDELETE\s+FROM\s+\w+\s*(?:;|$)", "veritabanından veri silmek"),
+    (r"\b(?:pip|npm|winget|choco)\s+uninstall\b", "paket kaldırmak"),
+    (r"\b(?:curl|wget|iwr|Invoke-WebRequest)\b.*\|\s*(?:sh|bash|iex|Invoke-Expression)\b", "internetten indirilen betiği doğrudan çalıştırmak"),
+]
+WRITERS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+
+
+def _inside(path: str, project: str) -> bool:
+    """Writing is free in the project, its work branches, Claude's own folders and temp."""
+    full = os.path.normcase(os.path.abspath(os.path.join(project or ".", path)))
+    homes = [project, f"{project.rstrip(os.sep + '/')}-isler", os.path.expanduser("~/.claude"),
+             os.environ.get("TEMP", ""), os.environ.get("TMP", "")]
+    for home in filter(None, homes):
+        home = os.path.normcase(os.path.abspath(home))
+        if full == home or full.startswith(home.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+def judge(tool: str, tool_input: dict, project: str) -> tuple[str, str]:
+    """("deny" | "ask" | "", why) for one tool call of the terminal's Claude or its team."""
+    if tool in ("Bash", "PowerShell"):
+        command = str(tool_input.get("command", ""))
+        for pattern, what in BLOCK:
+            if re.search(pattern, command, re.IGNORECASE):
+                return "deny", f"Kilitli: {what}. Bu komut hiçbir koşulda çalıştırılmaz; başka yol bul ya da Çağan'a raporla."
+        for pattern, what in ASK:
+            if re.search(pattern, command, re.IGNORECASE):
+                return "ask", f"Riskli: {what}. Çağan'ın onayı gerekiyor."
+    if tool in WRITERS and project:
+        path = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        if path and not _inside(path, project):
+            return "ask", f"Proje dışına yazma: {path}. Çağan'ın onayı gerekiyor."
+    return "", ""
+
+
 def main() -> None:
     kind = sys.argv[1] if len(sys.argv) > 1 else "stop"
     if kind == "session_start":
@@ -62,6 +117,14 @@ def main() -> None:
         return
     sys.stdout.reconfigure(encoding="utf-8")
     data = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
+    if kind == "pre":
+        decision, reason = judge(data.get("tool_name", ""), data.get("tool_input") or {},
+                                 os.environ.get("CLAUDE_SES_TERMINAL", "") or data.get("cwd", ""))
+        if decision:
+            # Decided here, without the server: the lock must hold even when the server is down.
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision,
+                                                     "permissionDecisionReason": reason}}, ensure_ascii=False))
+            return
     # Which project's terminal this Claude runs in: each project has its own.
     body = {"kind": kind, "terminal": os.environ.get("CLAUDE_SES_TERMINAL", "")}
     if kind == "prompt":

@@ -22,6 +22,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
 from server.life import KINDS, SITUATIONS, LifeLog, weather
 from server.schedule import Schedule, parse_when
+from server import worktrees
 from server.config import ROOT
 from server.usage import GEMINI
 
@@ -187,6 +188,21 @@ OFFICE_TOOLS = [
 ]
 LIVE_TOOLS[0]["functionDeclarations"].extend(OFFICE_TOOLS)
 
+# Code work runs on its own branch (server/worktrees.py); Çağan decides what lands in the project.
+_BRANCH = {"proje": {"type": "string", "description": "Projenin adı; boşsa açık proje."},
+           "dal": {"type": "string", "description": "İş dalının adı, örneğin cuba/giris-sayfasi; bir parçası da olur."}}
+BRANCH_TOOLS = [
+    {"name": "is_dallari", "description": "Projedeki açık iş dallarını ve ne değiştirdiklerini listeler.",
+     "parameters": {"type": "object", "properties": {"proje": _BRANCH["proje"]}}},
+    {"name": "dal_fark", "description": "Bir iş dalının değiştirdiği dosyaları özetler (farkı göster).",
+     "parameters": {"type": "object", "properties": _BRANCH, "required": ["dal"]}},
+    {"name": "dal_birlestir", "description": "İş dalını projeye birleştirir. Yalnızca Çağan açıkça birleştir dediyse.",
+     "parameters": {"type": "object", "properties": _BRANCH, "required": ["dal"]}},
+    {"name": "dal_at", "description": "İş dalını ve klasörünü siler, proje değişmez. Yalnızca Çağan açıkça at ya da sil dediyse.",
+     "parameters": {"type": "object", "properties": _BRANCH, "required": ["dal"]}},
+]
+LIVE_TOOLS[0]["functionDeclarations"].extend(BRANCH_TOOLS)
+
 def project_block(listing: dict) -> str:
     """The projects Cuba can hand work in, the open one marked."""
     lines = [
@@ -281,6 +297,23 @@ class CubaTools:
         await self._hand_over(f"Bu iş `cuba-ekip:{who}` üyesinin; Agent aracıyla ona ver.\n\n{str(args['talimat']).strip()}", folder)
         return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
 
+    async def _branch(self, name: str, args: dict) -> dict:
+        listing = self.projects()
+        wanted = str(args.get("proje", "")).strip()
+        folder = find_project(listing, wanted) if wanted else listing.get("current")
+        if folder is None:
+            return {"error": "Hangi proje olduğu belli değil. Çağan'a sor."}
+        if not worktrees.is_repo(folder):
+            return {"error": "Bu proje git deposu değil; iş dalı yok."}
+        dal = str(args.get("dal", "")).strip()
+        try:
+            if name == "is_dallari":
+                return {"dallar": await asyncio.to_thread(worktrees.branches, folder)}
+            action = {"dal_fark": worktrees.diff, "dal_birlestir": worktrees.merge, "dal_at": worktrees.discard}[name]
+            return await asyncio.to_thread(action, folder, dal)
+        except worktrees.DalError as e:
+            return {"error": str(e)}
+
     async def run(self, name: str, args: dict) -> dict:
         try:
             if name == "komut":
@@ -299,6 +332,8 @@ class CubaTools:
                 return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
             if name in ("ekibe_ver", "toplanti_ac", "soz_ver", "toplanti_kapat"):
                 return await self._office(name, args)
+            if name in ("is_dallari", "dal_fark", "dal_birlestir", "dal_at"):
+                return await self._branch(name, args)
             if name == "hayat_kaydet" and self.life is not None and str(args.get("detay", "")).strip():
                 entry = self.life.add(str(args.get("tur", "")), str(args["detay"]), args.get("sure_dk"),
                                       str(args.get("deger") or ""))

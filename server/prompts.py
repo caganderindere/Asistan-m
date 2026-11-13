@@ -17,6 +17,7 @@ INSTALLERS = ("pip install", "uv add", "uv pip install", "npm install", "npx", "
 TEMPLATES = ROOT / "ekip"
 EKIP_TOOL = ROOT / "tools" / "ekip.py"
 OFIS_TOOL = ROOT / "tools" / "ofis.py"
+DAL_TOOL = ROOT / "tools" / "dal.py"
 
 
 def ofis_command() -> str:
@@ -96,7 +97,7 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
     charter = out_dir / "TERMINAL.md"
     out_dir.mkdir(parents=True, exist_ok=True)
     charter.write_text(
-        (TEMPLATES / "TERMINAL.md").read_text(encoding="utf-8").replace("{{roster}}", roster).replace("{{profil}}", str(PROFILE)) + office_section(),
+        (TEMPLATES / "TERMINAL.md").read_text(encoding="utf-8").replace("{{roster}}", roster).replace("{{profil}}", str(PROFILE)).replace("{{dal}}", f"{sys.executable} {DAL_TOOL}") + office_section(),
         encoding="utf-8",
     )
 
@@ -120,4 +121,19 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
             f"{body}{office_section()}",
             encoding="utf-8",
         )
+    write_skills(plugin)
     return charter, plugin
+
+
+SKILLS = TEMPLATES / "skills"
+
+
+def write_skills(plugin: Path) -> None:
+    """The team's own skills, from ekip/skills/, with this machine's Python and paths filled in."""
+    for source in SKILLS.glob("*/SKILL.md"):
+        target = plugin / "skills" / source.parent.name
+        target.mkdir(parents=True, exist_ok=True)
+        text = source.read_text(encoding="utf-8").replace("{{python}}", sys.executable)
+        for script in source.parent.glob("*.py"):
+            text = text.replace(f"{{{{{script.stem}}}}}", str(script))
+        (target / "SKILL.md").write_text(text, encoding="utf-8")
