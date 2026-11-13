@@ -68,6 +68,9 @@ def main() -> None:
         body["text"] = data.get("prompt", "")
     elif kind == "stop":
         body["text"] = data.get("last_assistant_message") or last_reply(data.get("transcript_path", ""))
+    elif kind == "subagent_stop":
+        body.update(agent=data.get("agent_id", ""), agent_type=data.get("agent_type", ""),
+                    result=str(data.get("last_assistant_message") or "")[-3000:])
     elif kind in ("pre", "post"):
         body.update(
             tool=data.get("tool_name", ""), use_id=data.get("tool_use_id", ""), agent=data.get("agent_id", ""),
@@ -78,6 +81,8 @@ def main() -> None:
         edits = raw.get("edits") if isinstance(raw.get("edits"), list) else []
         written = raw.get("new_string") or raw.get("content") or raw.get("new_source") or (
             edits[0].get("new_string") if edits and isinstance(edits[0], dict) else "")
+        if raw.get("run_in_background") is True:
+            body["input"]["run_in_background"] = "true"
         if kind == "pre" and isinstance(written, str) and written:
             # The start of the code being written, to float over the writer's desk.
             body["input"]["new_string"] = written[:1500]
