@@ -1,128 +1,129 @@
-# Cuba: kişisel AI komuta merkezi
+# Cuba: a personal AI command center
 
-Cuba, sesle konuştuğun Türkçe bir kişisel asistan ve onun yönettiği bir yapay zekâ ekibi.
+Cuba is a Turkish-speaking personal assistant you talk to by voice, and the AI team it manages.
 
-- **Konuşma Gemini Live'da:** telefonda konuşur gibi konuşursun, sözünü kesebilirsin, cevap yarım saniyede gelir.
-- **İş Claude Code'da:** kod, araştırma, pazarlama ve sunum işlerini her projenin kendi terminalindeki Claude ekibi yapar.
-- **Her şey ekranda:** ekip uzay istasyonundaki bir ofiste çalışır. Kim hangi dosyayı yazıyor, kim kiminle toplantıda, canlı görürsün.
+- **Talk runs on Gemini Live:** you speak as if on a phone call, interrupt whenever you like, and answers arrive in about half a second.
+- **Work runs on Claude Code:** code, research, marketing and slide decks are done by a Claude team in each project's own terminal.
+- **Everything is on screen:** the team works in an office on a space station. You watch live who is writing which file and who is in a meeting with whom.
 
-Gündelik sohbet Claude token'ı harcamaz. Claude yalnızca gerçek bir iş verildiğinde çalışır.
+Everyday chat spends no Claude tokens. Claude only runs when there is real work to do.
 
-![Asistan ekranı: Cuba'nın küresi ve altında süren işlerin kartları](docs/img/asistan.png)
+![Assistant screen: Cuba's orb with cards for the work in progress below it](docs/img/asistan.png)
 
-| Ofis: ekip çalışırken | Telefondan |
+| The office, team at work | On the phone |
 |---|---|
-| ![Ofis](docs/img/ofis.png) | ![Telefon](docs/img/telefon.png) |
+| ![Office](docs/img/ofis.png) | ![Phone](docs/img/telefon.png) |
 
-> Görüntüler örnek verilerle `tools\screenshots.py` ile alınır. Gerçek konuşma ya da hafıza içermez.
+> Screenshots are taken from made-up data with `tools\screenshots.py`. They contain no real conversations or memory.
+> The interface and Cuba's voice are in Turkish; the labels below give the Turkish name in parentheses.
 
-## Neler yapar
+## What it does
 
-**Konuşur ve hatırlar**
-- Günün planını, görevleri, takvimi ve notları tutar. "Bugün ne vardı?" dediğinde hatırlar.
-- Seni tanır: tercihlerini, projelerini, sevmediklerini bir deftere yazar ve ona göre davranır.
-- Her günün sonunda günlüğünü yazar. Ertesi gün yarım kalanı kendisi hatırlatır.
-- Spor, yol, uyku, yemek gibi gündelik konuları kaydeder. Hava durumu ve güncel bilgi için Google'da arar.
+**Talks and remembers**
+- Keeps your plan for the day, tasks, calendar and notes. Ask "what was on today?" and it remembers.
+- Gets to know you: it writes your preferences, projects and dislikes into a notebook and acts on them.
+- Writes a diary at the end of each day, and brings up unfinished things the next day on its own.
+- Logs everyday life such as workouts, drives, sleep and meals. Searches Google for the weather and current facts.
 
-**İş dağıtır**
-- "Mağazada kupon indirimi yanlış, ekibe ver" dediğinde işi o projenin terminaline verir ve sohbete devam eder.
-- Kod işleri projenin kendisinde değil, ayrı bir iş dalında (`cuba/...`) yapılır. Beğenmezsen "at" dersin, proje bozulmaz.
-- Ekip bitirince rapor gelir. Cuba sana bir iki cümleyle anlatır.
-- İleri zamanlı işler kurar: "30 dakika sonra blogda bağımlılıkları güncellesinler."
+**Hands out work**
+- Say "the coupon discount in the shop is wrong, give it to the team" and it hands the job to that project's terminal and keeps talking with you.
+- Code changes happen on a separate work branch (`cuba/...`), not in the project itself. If you don't like the result, say "drop it" and the project is untouched.
+- When the team finishes, a report comes in and Cuba tells you about it in a sentence or two.
+- Schedules work for later: "in 30 minutes, have them update the blog's dependencies."
 
-**Araştırır ve belge üretir**
-- Kısa sorular (hava, maç, fiyat) anında sesli cevaplanır.
-- "Online çiçekçi fiyatlarını araştır" dediğinde Gemini Google'da araştırır ve belgeyi projenin `pazarlama\` klasörüne yazar. Claude token'ı harcanmaz.
-- Site taraması, rakip analizi ve sunum (`.pptx`) gibi derin işleri Claude'daki pazarlama ekibi yapar.
-- Biten işin belgesi küre altındaki kartta çıkar. Tıklayınca açılır.
-- Sunucu, raporda adı geçen her belgenin diskte gerçekten olup olmadığını kontrol eder. Cuba olmayan bir belgeye "hazır" diyemez.
+**Researches and writes documents**
+- Short questions (weather, a score, a price) are answered right away by voice.
+- Say "research online florist prices" and Gemini researches it on Google and writes the document into the project's `pazarlama\` (marketing) folder. No Claude tokens are spent.
+- Deeper work such as crawling a site, competitor analysis and slide decks (`.pptx`) is done by the marketing team on Claude.
+- A finished job's documents appear on its card under the orb. Click one to open it.
+- The server checks that every document a report names really exists on disk, so Cuba cannot call a missing document "ready."
 
-**Seni bulur**
-- Ekran başında değilsen biten işler, toplantı kararları ve onay soruları Telegram'a gelir.
-- Ekip yalnızca senin yapabileceğin bir adımda takılırsa (giriş, 2FA, UAC) telefonunda "Cuba arıyor" bildirimi çalar.
-- Uzak modda kararları Cuba senin yerine verir. Döndüğünde "hoş geldin patron" deyip olanları özetler.
+**Finds you**
+- When you are away from the screen, finished work, meeting decisions and approval questions come to Telegram.
+- If the team gets stuck on a step only you can take (a sign-in, 2FA, a UAC prompt), your phone rings with a "Cuba is calling" (Cuba arıyor) notification.
+- In away mode Cuba makes the decisions for you. When you return it says "welcome back, boss" and sums up what happened.
 
-| Bütün projelerin belgeleri | Bir araştırma belgesi |
+| Every project's documents | A research document |
 |---|---|
-| ![Belgeler sekmesi](docs/img/belgeler.png) | ![Belge penceresi](docs/img/belge.png) |
+| ![Documents tab](docs/img/belgeler.png) | ![Document window](docs/img/belge.png) |
 
-## Ekip
+## The team
 
-Dokuz kişilik bir ofis: sen, Cuba ve iki bölüm.
+An office of nine: you, Cuba and two departments.
 
-| Bölüm | Kim | Ne yapar |
+| Department | Who | What they do |
 |---|---|---|
-| Yönetim | **Cuba** | Seni dinler, işi böler, ekibe verir, sonucu sana anlatır |
-| Yazılım | Kıdemli Geliştirici, Geliştirici, Testçi, Asistan | Kod, mimari, test, küçük işler |
-| Pazarlama | Pazarlamacı, İçerikçi, Sosyalci | Strateji, araştırma, metin, SEO, sosyal medya, sunum |
+| Management | **Cuba** | Listens to you, splits up the work, hands it out, reports back to you |
+| Software | Senior Developer, Developer, Tester, Assistant | Code, architecture, tests, small jobs |
+| Marketing | Marketer, Content Writer, Social Media Manager | Strategy, research, copy, SEO, social media, decks |
 
-Gerekirse Cuba ekibe yeni bir uzman alır ("bir tasarımcı al"). En fazla dört yeni masa açılabilir.
-Birden fazla kişi bir işte çalıştıysa iş bitince toplantı odasında konuşurlar. Toplantıyı sesli dinleyebilirsin.
+When needed, Cuba hires a new specialist ("hire a designer"). Up to four new desks can be opened.
+When several people worked on a job, they talk it over in the meeting room once it is done. You can listen to the meeting out loud.
 
-| Konuşma ve ekip toplantısı | Zamanlı işler |
+| Conversation and team meeting | Scheduled work |
 |---|---|
-| ![Konuşma](docs/img/konusma.png) | ![Zamanlı işler](docs/img/zamanli.png) |
+| ![Conversation](docs/img/konusma.png) | ![Scheduled work](docs/img/zamanli.png) |
 
-## Nasıl çalışır
+## How it works
 
 ```mermaid
 flowchart LR
-    Sen((Sen)) -- ses --> Live[Gemini Live<br/>Cuba]
-    Sen -- yazı / sesli mesaj --> TG[Telegram]
+    You((You)) -- voice --> Live[Gemini Live<br/>Cuba]
+    You -- text / voice message --> TG[Telegram]
     TG --> Live
-    Live -- terminale_ver / ekibe_ver --> T1[Proje terminali<br/>Claude Code + ekip]
+    Live -- terminale_ver / ekibe_ver --> T1[Project terminal<br/>Claude Code + team]
     Live -- arastir --> G[Gemini + Google Search]
     G --> D[(pazarlama/*.md)]
     T1 --> D
-    T1 --> W[(cuba/... iş dalı)]
-    T1 -- rapor --> S[Sunucu<br/>belge kontrolü]
+    T1 --> W[(cuba/... work branch)]
+    T1 -- report --> S[Server<br/>document check]
     S -- "[EKİP RAPORU]" --> Live
-    S --> UI[Tarayıcı / telefon<br/>ofis, kartlar, belgeler]
+    S --> UI[Browser / phone<br/>office, cards, documents]
 ```
 
-- **Sunucu** (`server/`): FastAPI ve WebSocket. Gemini Live oturumunu, proje terminallerini, ofisi ve hafızayı yönetir.
-- **Terminal:** her projenin kendi Windows terminali var ve içinde Claude Code çalışıyor. Ekip üyeleri Claude Code alt ajanları (`cuba-ekip` eklentisi). Hook'lar her araç çağrısını ofise yansıtır.
-- **Arayüz** (`web/`): çerçevesiz, düz JavaScript. Ofis bir canvas çizimi. Telefonda ana ekrana eklenen bir uygulama (PWA) olarak da çalışır.
-- **Talimatlar** (`ekip/`): Cuba'nın, terminal liderinin ve her çalışanın görev tanımı düz Markdown dosyaları.
+- **Server** (`server/`): FastAPI and WebSockets. Runs the Gemini Live session, the project terminals, the office and the memory.
+- **Terminal:** every project has its own Windows terminal running Claude Code. Team members are Claude Code subagents (the `cuba-ekip` plugin). Hooks mirror every tool call into the office.
+- **Interface** (`web/`): plain JavaScript, no framework. The office is drawn on a canvas. It also works as an app (PWA) added to a phone's home screen.
+- **Instructions** (`ekip/`): the job descriptions of Cuba, the terminal lead and every team member are plain Markdown files (in Turkish).
 
-## Kurulum
+## Setup
 
-Gerekenler: Windows 10/11, Python 3.13, [uv](https://docs.astral.sh/uv/), giriş yapılmış [Claude Code](https://claude.com/claude-code) ve bir [Gemini API anahtarı](https://aistudio.google.com/apikey). İsteğe bağlı: klasik ses modu için NVIDIA ekran kartı (yerel Whisper).
+You need: Windows 10/11, Python 3.13, [uv](https://docs.astral.sh/uv/), a signed-in [Claude Code](https://claude.com/claude-code) and a [Gemini API key](https://aistudio.google.com/apikey). Optional: an NVIDIA GPU for the classic voice mode (local Whisper).
 
 ```powershell
 git clone https://github.com/caganderindere/Asistan-m.git D:\ClaudeSes
 cd D:\ClaudeSes
 uv sync --extra dev
-Set-Content data\gemini_key.txt "<Gemini anahtarın>"   # ya da GEMINI_API_KEY ortam değişkeni
-powershell -ExecutionPolicy Bypass -File tools\make_shortcut.ps1   # masaüstü kısayolu
+Set-Content data\gemini_key.txt "<your Gemini key>"   # or the GEMINI_API_KEY environment variable
+powershell -ExecutionPolicy Bypass -File tools\make_shortcut.ps1   # desktop shortcut
 ```
 
-## Kullanım
+## Usage
 
-- Masaüstündeki **Cuba** kısayoluna çift tıkla (ya da `start.cmd`). Tarayıcıda `http://127.0.0.1:8765` açılır.
-- **Küreye dokun** ve konuş. Ya da alttaki kutuya yaz. "Cuba" demen de yeter.
-- **Dur** düğmesi ya da `Esc` her şeyi durdurur.
-- Sol listeye proje klasörü ekle. Cuba projeleri adıyla tanır: "blog projesinde şunu yap."
-- Ekranlar:
-  - **Asistan:** küre ve süren işlerin kartları.
-  - **Ofis:** canlı çalışan ekip.
-  - **Terminal:** Claude Code'un kendisi.
-- Sağdaki sekmeler:
-  - **Konuşma** ve **Akış:** konuşma geçmişi ve ekibin canlı hareketleri.
-  - **Görevler**, **Zamanlı** ve **Çıktılar:** açık işler, zamanlanmış işler ve biten işlerin özetleri.
-  - **Proje:** açık projenin git durumu ve belgeleri.
-  - **Belgeler:** bütün projelerin belge, araştırma ve sunumları, tarih sırasıyla.
-  - **Hafıza:** Cuba'nın seninle ilgili defteri ve günlükleri.
+- Double-click the **Cuba** shortcut on the desktop (or `start.cmd`). `http://127.0.0.1:8765` opens in the browser.
+- **Tap the orb** and talk. Or type in the box at the bottom. Saying "Cuba" works too.
+- The **Stop** (Dur) button or `Esc` stops everything.
+- Add project folders to the list on the left. Cuba knows projects by name: "in the blog project, do this."
+- Screens:
+  - **Assistant** (Asistan): the orb and the cards for work in progress.
+  - **Office** (Ofis): the team at work, live.
+  - **Terminal**: Claude Code itself.
+- Tabs on the right:
+  - **Conversation** (Konuşma) and **Feed** (Akış): the conversation history and the team's live activity.
+  - **Tasks** (Görevler), **Scheduled** (Zamanlı) and **Outputs** (Çıktılar): open work, scheduled work and summaries of finished work.
+  - **Project** (Proje): the open project's git state and documents.
+  - **Documents** (Belgeler): every project's documents, research and decks, newest first.
+  - **Memory** (Hafıza): Cuba's notebook about you, and its diaries.
 
-### Belgeler nereye kaydedilir
+### Where documents are saved
 
-| Ne | Nereye |
+| What | Where |
 |---|---|
-| Pazarlama belgeleri, araştırmalar, sunumlar | `<proje>\pazarlama\` |
-| Kod işlerinin planı, test raporu ve sonucu | `<proje>\docs\ekip\` |
-| Site taramasının ham verisi | `<proje>\pazarlama\veri\` |
+| Marketing documents, research, decks | `<project>\pazarlama\` |
+| Plan, test report and result of code jobs | `<project>\docs\ekip\` |
+| Raw data from site crawls | `<project>\pazarlama\veri\` |
 
-## Ayarlar: `config.json` (isteğe bağlı)
+## Settings: `config.json` (optional)
 
 ```json
 {
@@ -131,51 +132,51 @@ powershell -ExecutionPolicy Bypass -File tools\make_shortcut.ps1   # masaüstü 
   "workdir": "D:\\",
   "port": 8765,
   "models": { "kidemli": "claude-opus-5-5" },
-  "remote_hosts": ["pc.agin.ts.net"]
+  "remote_hosts": ["pc.your-net.ts.net"]
 }
 ```
 
-Yalnızca değiştirmek istediğin alanları yaz. `models` ile ekip üyelerinin modelini seçersin. `vocabulary`, ses tanımanın doğru yazması gereken özel isimlerdir. Cuba'nın canlı sesi Hafıza sekmesinden seçilir.
+Only write the fields you want to change. `models` picks the model for each team member. `vocabulary` lists proper names speech recognition should spell correctly. Cuba's live voice is chosen in the Memory tab.
 
-## Telefondan
+## From your phone
 
-**Canlı konuşma (Tailscale).** Bilgisayar evde açık kalır, telefon mikrofon ve hoparlör olur.
+**Live talk (Tailscale).** The computer stays on at home; the phone becomes the microphone and speaker.
 
-1. Bilgisayara ve telefona [Tailscale](https://tailscale.com/download) kur, ikisinde aynı hesapla gir.
-2. Bilgisayarda bir kez: `tailscale serve --bg 8765`
-3. Cuba'yı yeniden başlat. Pencerede `Telefondan: https://<bilgisayar>.<ağ>.ts.net` yazar.
-4. Telefonda o adresi aç ve **Ana ekrana ekle**. Hafıza sekmesindeki **Telefonda bildirimleri aç** düğmesine bir kez dokun: "Cuba arıyor" bildirimleri böyle gelir.
+1. Install [Tailscale](https://tailscale.com/download) on the computer and the phone, and sign in to the same account on both.
+2. On the computer, once: `tailscale serve --bg 8765`
+3. Restart Cuba. Its window shows `Telefondan: https://<computer>.<network>.ts.net`.
+4. Open that address on the phone and choose **Add to Home Screen**. Tap **Telefonda bildirimleri aç** (turn on phone notifications) in the Memory tab once: that is how "Cuba is calling" notifications arrive.
 
-Adres yalnızca senin Tailscale cihazlarından açılır, internete açık değildir.
+The address only opens from your own Tailscale devices; it is not exposed to the internet.
 
-**Telegram.** @BotFather'dan bir bot aç, token'ı `data\telegram.json` içine yaz (`{"token": "..."}`), Cuba'yı yeniden başlat ve ekrandaki kodla bota `/esle <kod>` gönder. Bundan sonra yazıyla ya da sesli mesajla Cuba'yla konuşabilirsin. Onay soruları Evet/Hayır düğmeleriyle gelir. Komutlar: `/durum`, `/uzak`, `/dur`.
+**Telegram.** Create a bot with @BotFather, put its token in `data\telegram.json` (`{"token": "..."}`), restart Cuba and send the bot `/esle <code>` with the code shown on screen. From then on you can talk to Cuba by text or voice message. Approval questions come with Yes/No buttons. Commands: `/durum` (status), `/uzak` (away mode on/off), `/dur` (stop).
 
-## Gizlilik
+## Privacy
 
-- Canlı konuşmada ses Gemini Live'a (Google) gider. Klasik modda ses bilgisayardan çıkmaz, yerel Whisper yazıya döker.
-- Cuba'nın hafızası, günlükleri ve Telegram mesajları Gemini'ye, ekibe verilen işler ve proje dosyaları Claude'a (Anthropic) gider.
-- Sunucu yalnızca bu bilgisayardan ve kurduysan senin Tailscale cihazlarından erişilebilir.
-- Belge penceresi yalnızca projelerin `docs\ekip\` ve `pazarlama\` klasörlerindeki belgeleri açar.
-- Ekip tam yetkiyle çalışır ve çoğu işte izin sormaz. Klasör silme, `git push`, paket kaldırma ve canlıya dağıtım gibi riskli komutlar bir hook ile durdurulur ve senin onayını bekler.
+- In live talk your voice goes to Gemini Live (Google). In classic mode audio never leaves the computer; local Whisper transcribes it.
+- Cuba's memory, diaries and Telegram messages go to Gemini; work given to the team and project files go to Claude (Anthropic).
+- The server is reachable only from this computer and, if you set it up, your own Tailscale devices.
+- The document window only opens documents in a project's `docs\ekip\` and `pazarlama\` folders.
+- The team works with full permissions and mostly does not ask. Risky commands such as deleting folders, `git push`, uninstalling packages and deploying to production are stopped by a hook and wait for your approval.
 
-## Sorun giderme
+## Troubleshooting
 
-| Belirti | Çözüm |
+| Symptom | Fix |
 |---|---|
-| "Claude Code bulunamadı" | Bir terminalde `claude` yazıp giriş yap, Cuba'yı yeniden aç |
-| "Mikrofon izni gerekli" | Adres çubuğundaki kilitten mikrofona izin ver |
-| Cuba cevap vermiyor, "quota" hatası | Gemini anahtarının kotasını ve faturalandırmasını kontrol et |
-| Telefonda adres açılmıyor | `tailscale serve status` ile yönlendirmeyi kontrol et |
-| "Başka bir sekmede açıldı" | Uygulama tek sekmede çalışır, öbür sekmeyi kullan |
+| "Claude Code bulunamadı" (Claude Code not found) | Run `claude` in a terminal, sign in, reopen Cuba |
+| "Mikrofon izni gerekli" (microphone permission needed) | Allow the microphone from the lock icon in the address bar |
+| Cuba does not answer, "quota" error | Check your Gemini key's quota and billing |
+| The address does not open on the phone | Check the forwarding with `tailscale serve status` |
+| "Başka bir sekmede açıldı" (opened in another tab) | The app runs in a single tab; use the other one |
 
-## Geliştirme
+## Development
 
 ```powershell
-.venv\Scripts\python -m pytest                     # birim testleri
-.venv\Scripts\python -m pytest -m "network or gpu" # gerçek Edge sesi ve ekran kartında Whisper
-.venv\Scripts\python -m pytest -m e2e -s           # gerçek Claude ile uçtan uca (uygulama kapalıyken)
-.venv\Scripts\python tools\screenshots.py          # README görüntülerini örnek verilerle yeniden al
-.venv\Scripts\python tools\tanitim.py              # tanıtım videosunu örnek verilerle kaydet
+.venv\Scripts\python -m pytest                     # unit tests
+.venv\Scripts\python -m pytest -m "network or gpu" # real Edge voice and Whisper on the GPU
+.venv\Scripts\python -m pytest -m e2e -s           # end to end with the real Claude (app closed)
+.venv\Scripts\python tools\screenshots.py          # retake the README screenshots from made-up data
+.venv\Scripts\python tools\tanitim.py              # record the tour video from made-up data
 ```
 
-Görüntü ve video araçları Playwright ile Microsoft Edge'i kullanır ve tamamen uydurma verilerle çalışır.
+The screenshot and video tools drive Microsoft Edge through Playwright and use made-up data only.
