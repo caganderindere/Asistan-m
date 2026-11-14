@@ -293,3 +293,28 @@ def test_research_goes_to_the_desktop_folder(tmp_path):
     path = research_path("D:/projeler/magaza", "Çiçek fiyatları", datetime.date(2026, 11, 15))
     assert path.parent.name == "magaza" and path.parent.parent.name == "belgeler"
     assert path.name == "arastirma-2026-11-15-cicek-fiyatlari.md"
+
+
+async def test_claude_is_consulted_in_the_background_and_cuba_hears_the_answer(tmp_path):
+    from server.live import CubaTools
+
+    async def nothing(*_):
+        return None
+    asked, told = [], []
+
+    async def consult(question, folder):
+        asked.append((question, folder))
+        return {"cevap": "Mağaza sitesi FastAPI ile yazılmış."}
+
+    async def tell(text):
+        told.append(text)
+    tools = CubaTools(nothing, nothing, tmp_path, consult=consult, tell=tell,
+                      projects=lambda: {"projects": [{"name": "magaza", "path": "D:/magaza"}], "current": "D:/magaza"})
+    reply = await tools.run("claude_danis", {"soru": "Site neyle yazılmış?"})
+    assert reply["ok"] and "CLAUDE CEVAPLADI" in reply["not"]
+    for _ in range(50):
+        if told:
+            break
+        await asyncio.sleep(0.01)
+    assert asked == [("Site neyle yazılmış?", "D:/magaza")]
+    assert told[0].startswith("[CLAUDE CEVAPLADI — magaza]") and "FastAPI" in told[0]

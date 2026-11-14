@@ -118,6 +118,20 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {"konu": {"type": "string"}}, "required": ["konu"]},
     },
     {
+        "name": "claude_danis",
+        "description": "Bilmediğin bir şeyi Claude'a danışır: bir projenin içi (ne yapıyor, nasıl çalışıyor, hangi "
+                       "dosyada ne var), teknik bir konu. Claude proje dosyalarını okur, hiçbir şeyi değiştirmez. "
+                       "Arka planda çalışır; cevap [CLAUDE CEVAPLADI] olarak gelir.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "soru": {"type": "string", "description": "Çağan'ın sorusu, gereken her ayrıntıyla."},
+                "proje": {"type": "string", "description": "Hangi projeyle ilgili; söylenmediyse açık olan proje."},
+            },
+            "required": ["soru"],
+        },
+    },
+    {
         "name": "ekrana_bak",
         "description": "Çağan'ın bilgisayar ekranına bakar ve soruyu ekrandakine göre cevaplar: hata, sayfa, "
                        "tablo, belge, kod. \"Ekrana bak\", \"bu ne\", \"şunu oku\" denince kullan.",
@@ -370,7 +384,9 @@ class CubaTools:
         opener=None,
         look: Callable[[str], Awaitable[dict]] | None = None,
         remember: Callable[[str], Awaitable[dict]] | None = None,
+        consult: Callable[[str, str], Awaitable[dict]] | None = None,
     ) -> None:
+        self._consult = consult  # server/claude_chat.py: read-only Claude Code in the project
         self._look = look  # server/screen.py: a screenshot read by Gemini
         self._remember = remember  # server/semantic.py: search by meaning
         self.opener = opener  # server/opener.py: YouTube, sites, documents, programs on this PC
@@ -436,6 +452,15 @@ class CubaTools:
             learn(self.memory_dir, project, f"Araştırma \"{topic}\": {name}", "Google")
             told = f"[ARAŞTIRMA BİTTİ — {project}]\nBelge: {name} (sunucu yazdı, var)\n{result['cevap'][:1500]}"
         self._notify({"type": "job", "project": project, "state": "done", "docs": docs})
+        if self._tell is not None:
+            await self._tell(told)
+
+    async def _ask_claude(self, folder: str, question: str) -> None:
+        """Claude reads the project and answers; Cuba hears it when it comes."""
+        result = await self._consult(question, folder)
+        project = Path(folder).name
+        told = (f"[CLAUDE CEVAPLADI — {project}] Soru: {question}\n{result['cevap']}" if result.get("cevap")
+                else f"[CLAUDE CEVAPLAYAMADI — {project}] {result.get('error', '')}")
         if self._tell is not None:
             await self._tell(told)
 
@@ -507,6 +532,16 @@ class CubaTools:
                 return confirm(self.memory_dir, str(args["konu"]), str(args["bilgi"]), bool(args.get("dogru")))
             if name == "bilgi_oku" and str(args.get("konu", "")).strip():
                 return recall(self.memory_dir, str(args["konu"]))
+            if name == "claude_danis" and self._consult is not None and str(args.get("soru", "")).strip():
+                listing = self.projects()
+                wanted = str(args.get("proje", "")).strip()
+                folder = find_project(listing, wanted) if wanted else listing.get("current")
+                folder = folder or str(self.memory_dir)  # no project: Claude still sees what Cuba knows
+                task = asyncio.create_task(self._ask_claude(folder, str(args["soru"]).strip()))
+                self._studies.add(task)
+                task.add_done_callback(self._studies.discard)
+                return {"ok": True, "not": "Claude'a sordum, dosyalara bakıyor. Çağan'a 'Claude'a soruyorum' de; "
+                                          "cevap [CLAUDE CEVAPLADI] olarak gelecek, o gelmeden uydurma."}
             if name == "ekrana_bak" and self._look is not None:
                 return await self._look(str(args.get("soru", "")))
             if name == "hatirla" and self._remember is not None and str(args.get("soru", "")).strip():
