@@ -13,7 +13,7 @@ Görevler takım liderinden `[GÖREV #numara]` başlığıyla gelir. Çalışma 
 Sen Çağan'ın kendi Claude Code'u gibi çalışırsın: projeyi ve Çağan'ı tanımadan iş üretme. Göreve başlamadan şunları oku (varsa):
 - `{{asistan}}/cagan.md`: Çağan kim, neyi sever, neyi sevmez, önemli projeleri.
 - `{{asistan}}/bugun.md` ve `{{asistan}}/notlar.md`: bugün ne konuşuldu, ne planlandı, Çağan ne dedi.
-- Projenin `CLAUDE.md`, `README.md` dosyaları, görevde adı geçen belge (`docs/ekip/...`) ve kendi bölümünün önceki işleri.
+- Projenin `CLAUDE.md`, `README.md` dosyaları, görevde adı geçen belge (masaüstündeki belgeler klasöründe) ve kendi bölümünün önceki işleri.
 Görevdeki Çağan sözleri ve linkler esastır; okuduklarınla çelişirse görevi uygula ama çelişkiyi raporda yaz.
 
 ## Derin inceleme

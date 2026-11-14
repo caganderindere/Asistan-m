@@ -7,7 +7,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-from server.config import ROOT
+from server.config import BELGELER, ROOT
 from server.team import LEAD, ROLES, Role
 
 ASSISTANT = ROOT / "asistan" / "ASISTAN.md"
@@ -37,6 +37,7 @@ def worker_prompt(template: str, role: Role) -> str:
         .replace("{{department}}", role.department)
         .replace("{{duty}}", role.duty)
         .replace("{{asistan}}", PROFILE.parent.as_posix())
+        .replace("{{belgeler}}", str(BELGELER))
         .replace("{{cagan}}", f"{sys.executable} {CAGAN_TOOL}")
         .replace("{{yontem}}", (TEMPLATES / method).read_text(encoding="utf-8"))
     )
@@ -99,7 +100,7 @@ def write_terminal_team(out_dir: Path, models: Mapping[str, str], hires=()) -> t
     charter = out_dir / "TERMINAL.md"
     out_dir.mkdir(parents=True, exist_ok=True)
     charter.write_text(
-        (TEMPLATES / "TERMINAL.md").read_text(encoding="utf-8").replace("{{roster}}", roster).replace("{{profil}}", str(PROFILE)).replace("{{dal}}", f"{sys.executable} {DAL_TOOL}").replace("{{cagan}}", f"{sys.executable} {CAGAN_TOOL}") + office_section(),
+        (TEMPLATES / "TERMINAL.md").read_text(encoding="utf-8").replace("{{roster}}", roster).replace("{{belgeler}}", str(BELGELER)).replace("{{profil}}", str(PROFILE)).replace("{{dal}}", f"{sys.executable} {DAL_TOOL}").replace("{{cagan}}", f"{sys.executable} {CAGAN_TOOL}") + office_section(),
         encoding="utf-8",
     )
 

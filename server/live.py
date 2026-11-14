@@ -22,9 +22,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
 from server.life import KINDS, SITUATIONS, LifeLog, weather
 from server.schedule import Schedule, parse_when
-from server.memory import learn, recall, topics_block
+from server.memory import learn, recall, topic_names, topics_block
+from server.stt import is_noise
 from server import worktrees
-from server.config import ROOT
+from server.config import ROOT, doc_folder
 from server.usage import GEMINI
 
 logger = logging.getLogger(__name__)
@@ -104,8 +105,21 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {"konu": {"type": "string"}}, "required": ["konu"]},
     },
     {
+        "name": "ac",
+        "description": "Bu bilgisayarda bir şey açar: YouTube'da şarkı ya da video (ilk sonuç çalar), bir site, "
+                       "masaüstündeki belgeler klasöründen bir belge ya da bir program.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tur": {"type": "string", "enum": ["youtube", "site", "dosya", "uygulama"]},
+                "ne": {"type": "string", "description": "Şarkı ve sanatçı, site adresi, belgenin adı ya da tam yolu, program adı."},
+            },
+            "required": ["tur", "ne"],
+        },
+    },
+    {
         "name": "arastir",
-        "description": "Bir konuyu Google'da araştırıp projenin pazarlama/ klasörüne araştırma belgesi yazar; "
+        "description": "Bir konuyu Google'da araştırıp masaüstündeki belgeler klasörüne (proje adıyla) araştırma belgesi yazar; "
                        "arka planda çalışır, bitince [ARAŞTIRMA BİTTİ] gelir.",
         "parameters": {
             "type": "object",
@@ -260,9 +274,17 @@ def live_prompt(
         f"{PROMPT.read_text(encoding='utf-8')}\n{now_line(now or datetime.datetime.now())}\n\n"
         f"# Projeler\n{project_block(projects or {})}\n\n"
         f"# Hafıza dosyaları\n{memory_block(memory_dir)}\n\n"
-        f"# Bilgi konuların (içini `bilgi_oku` ile oku)\n{topics_block(memory_dir)}"
+        f"# Bilgi konuların (içini `bilgi_oku` ile oku)\n{topics_block(memory_dir)}\n\n"
+        f"# Duyabileceğin özel isimler\n{names_line(memory_dir, projects or {})}"
         + (f"\n\n# Son günlük sayfan\n{diary}" if diary else "")
     )
+
+
+def names_line(memory_dir: Path, listing: dict) -> str:
+    """Proper names Çağan uses, so a half-heard one is read as the name it sounds like."""
+    names = ["Cuba", "Çağan", *topic_names(memory_dir), *(p["name"] for p in listing.get("projects", []))]
+    return ", ".join(dict.fromkeys(names)) + (
+        ".\nDuyduğun söz bunlardan birine benziyorsa (ör. \"ASP Ruper\" → \"ASP Rubber\") o isim olarak anla.")
 
 
 def find_project(listing: dict, wanted: str) -> str | None:
@@ -286,10 +308,10 @@ TR_ASCII = str.maketrans("çğıöşüâî", "cgiosuai")
 
 
 def research_path(folder: str | Path, topic: str, today: datetime.date | None = None) -> Path:
-    """Where a research document goes: the project's pazarlama/ folder, dated, named after the topic."""
+    """Where a research document goes: the project's folder on the desktop, dated, named after the topic."""
     slug = "".join(c if c.isalnum() else "-" for c in topic.casefold().translate(TR_ASCII))
     slug = "-".join(part for part in slug.split("-") if part)[:50].rstrip("-") or "konu"
-    return Path(folder) / "pazarlama" / f"arastirma-{(today or datetime.date.today()).isoformat()}-{slug}.md"
+    return doc_folder(folder) / f"arastirma-{(today or datetime.date.today()).isoformat()}-{slug}.md"
 
 
 Hand = Callable[[str, str], Awaitable[None]]  # gives the terminal's Claude an instruction, in a project folder
@@ -316,7 +338,9 @@ class CubaTools:
         phone=None,
         research: Callable[[str], Awaitable[dict]] | None = None,
         tell: Callable[[str], Awaitable[None]] | None = None,
+        opener=None,
     ) -> None:
+        self.opener = opener  # server/opener.py: YouTube, sites, documents, programs on this PC
         self._research = research  # Gemini with Google Search: a document without Claude tokens
         self._studies: set[asyncio.Task] = set()
         self._tell = tell  # tells Cuba later, on the voice or Telegram, that background work finished
@@ -374,7 +398,7 @@ class CubaTools:
             text = f"# {topic}\n\n{result['cevap']}\n" + (f"\n## Kaynaklar\n{sources}\n" if sources else "")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
-            name = path.relative_to(folder).as_posix()
+            name = str(path)
             docs = [{"name": name, "path": str(path), "ok": True, "kb": round(path.stat().st_size / 1024, 1)}]
             learn(self.memory_dir, project, f"Araştırma \"{topic}\": {name}", "Google")
             told = f"[ARAŞTIRMA BİTTİ — {project}]\nBelge: {name} (sunucu yazdı, var)\n{result['cevap'][:1500]}"
@@ -448,6 +472,8 @@ class CubaTools:
                 return learn(self.memory_dir, str(args["konu"]), str(args["bilgi"]), str(args.get("kaynak") or ""))
             if name == "bilgi_oku" and str(args.get("konu", "")).strip():
                 return recall(self.memory_dir, str(args["konu"]))
+            if name == "ac" and self.opener is not None:
+                return await self.opener.open(str(args.get("tur", "")), str(args.get("ne", "")))
             if name == "ise_al" and self._hire is not None:
                 return await self._hire(str(args.get("ad", "")), str(args.get("gorev", "")), str(args.get("model") or "sonnet"))
             if name == "isten_cikar" and self._fire is not None:
@@ -595,9 +621,12 @@ class LiveHub:
             "model": f"models/{self._model}",
             "generationConfig": {
                 "responseModalities": ["AUDIO"],
-                "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {
+                "speechConfig": {"languageCode": "tr-TR", "voiceConfig": {"prebuiltVoiceConfig": {
                     "voiceName": self._voice() if callable(self._voice) else self._voice}}},
             },
+            # A TV or a room talking should not start a turn as easily as Çağan does.
+            "realtimeInputConfig": {"automaticActivityDetection": {
+                "startOfSpeechSensitivity": "START_SENSITIVITY_LOW", "prefixPaddingMs": 200}},
             "systemInstruction": {"parts": [{"text": self.tools.prompt(self._diary())}]},
             "tools": LIVE_TOOLS,
             "inputAudioTranscription": {},
@@ -656,7 +685,8 @@ class LiveHub:
                     await self._audio(base64.b64decode(data))
             if text := content.get("inputTranscription", {}).get("text"):
                 self._said["Çağan"] += text
-                await self._event({"type": "user", "text": text})
+                if not is_noise(text):
+                    await self._event({"type": "user", "text": text})
             if text := content.get("outputTranscription", {}).get("text"):
                 self._said["Cuba"] += text
                 await self._event({"type": "cuba", "text": text})
@@ -679,7 +709,7 @@ class LiveHub:
 
     def _log_turn(self) -> None:
         for who, text in self._said.items():
-            if text.strip() and self._heard is not None:
+            if text.strip() and self._heard is not None and not (who == "Çağan" and is_noise(text)):
                 self._heard(who, text)
         self._said = {"Çağan": "", "Cuba": ""}
 

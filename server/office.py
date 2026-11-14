@@ -11,6 +11,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from server.config import doc_folder
 from server.office_bus import Message, OfficeBus
 from server.office_meeting import LiveMeeting
 from server.omni import OmniClient
@@ -28,7 +29,8 @@ NOTE_CHARS = 2500
 def project_notes(folder: Path) -> str:
     """The newest marketing documents of the project, cut short: what a meeting talks over."""
     try:
-        files = sorted((folder / "pazarlama").glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True)[:NOTE_FILES]
+        found = [*(folder / "pazarlama").glob("*.md"), *doc_folder(folder).glob("*.md")]
+        files = sorted(found, key=lambda f: f.stat().st_mtime, reverse=True)[:NOTE_FILES]
     except OSError:
         return ""
     return "\n\n".join(f"## {f.name}\n{f.read_text(encoding='utf-8', errors='replace')[:NOTE_CHARS]}" for f in files)

@@ -7,6 +7,13 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Çağan wants documents out of the source: on the desktop, one folder per project.
+BELGELER = Path.home() / "Desktop" / "belgeler"
+
+
+def doc_folder(project: str | Path) -> Path:
+    """Where a project's documents go: Desktop/belgeler/<project folder name>."""
+    return BELGELER / Path(project).name
 
 DEFAULT_VOCABULARY: tuple[str, ...] = (
     "Çağan",

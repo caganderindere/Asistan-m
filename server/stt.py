@@ -76,3 +76,13 @@ class Transcriber:
             io.BytesIO(audio), language="tr", vad_filter=True, initial_prompt=self._prompt
         )
         return " ".join(segment.text.strip() for segment in segments).strip()
+
+
+# Scripts Çağan does not speak: when the Live transcript is mostly these, it heard the room, not him.
+_FOREIGN = re.compile(r"[Ͱ-ϿЀ-ӿ֐-ۿ฀-๿぀-ヿ㐀-鿿가-힯]")
+
+
+def is_noise(text: str) -> bool:
+    """True for a heard line that is mostly a foreign script (Korean, Japanese, Chinese, Arabic…)."""
+    letters = [c for c in text if c.isalpha()]
+    return bool(letters) and sum(bool(_FOREIGN.match(c)) for c in letters) > len(letters) / 2

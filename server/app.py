@@ -27,8 +27,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from server.claude_events import TextDelta, ToolUse, TurnResult
-from server.config import ROOT, Config
+from server.config import ROOT, Config, doc_folder
 from server.gemini_bridge import MissingKey
+from server.opener import Opener
 from server.projects import ProjectList, project_name
 from server.sentences import SentenceSplitter
 from server.stt import is_meaningful
@@ -958,8 +959,8 @@ DOC_TYPES = {".md", ".pptx", ".pdf", ".docx", ".xlsx", ".csv", ".html", ".png", 
 
 def team_documents(folder: str | Path) -> list[dict]:
     """The team's documents in a project, newest first: papers, research, decks, PDFs."""
-    files = [f for sub in DOC_DIRS for f in (Path(folder) / sub).glob("*")
-             if f.is_file() and f.suffix.lower() in DOC_TYPES]
+    dirs = [Path(folder) / sub for sub in DOC_DIRS] + [doc_folder(folder)]
+    files = [f for d in dirs for f in d.glob("*") if f.is_file() and f.suffix.lower() in DOC_TYPES]
     # Papers written the same second keep their dated names' order.
     files.sort(key=lambda f: (int(f.stat().st_mtime), f.name), reverse=True)
     docs = []
@@ -967,7 +968,7 @@ def team_documents(folder: str | Path) -> list[dict]:
         kind = f.suffix.lower()[1:]
         shown = f.stem if kind == "md" else f.name
         stat = f.stat()
-        docs.append({"name": shown if f.parent.name == "ekip" else f"pazarlama/{shown}", "path": str(f), "kind": kind,
+        docs.append({"name": f"pazarlama/{shown}" if f.parent.name == "pazarlama" else shown, "path": str(f), "kind": kind,
                      "kb": round(stat.st_size / 1024, 1),
                      "time": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="minutes")})
     return docs
@@ -976,7 +977,8 @@ def team_documents(folder: str | Path) -> list[dict]:
 def team_file(path: str, project_paths: list[str]) -> Path | None:
     """The file asked for, if it is one of the team's documents in a known project; nothing else is served."""
     wanted = Path(path).resolve()
-    inside = any(wanted.is_relative_to((Path(p) / sub).resolve()) for p in project_paths for sub in DOC_DIRS)
+    roots = [Path(p) / sub for p in project_paths for sub in DOC_DIRS] + [doc_folder(p) for p in project_paths]
+    inside = any(wanted.is_relative_to(root.resolve()) for root in roots)
     return wanted if inside and wanted.suffix.lower() in DOC_TYPES and wanted.is_file() else None
 
 
@@ -1226,7 +1228,7 @@ def main(argv: list[str] | None = None) -> None:
     def cuba_tools():
         from server.live import CubaTools
 
-        return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire,
+        return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire, opener=Opener(),
                          life=life, search=search if gemini_key else None, notify=notify, schedule=schedule,
                          office=office, phone=phone, research=research if gemini_key else None, tell=tell_cuba)
 

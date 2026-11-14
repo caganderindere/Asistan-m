@@ -214,8 +214,10 @@ async def test_marketing_work_goes_to_the_terminal_subagent(tmp_path):
     assert "cuba-ekip:pazarlama" in handed[0][0] and "balbalmedya.com" in handed[0][0]
 
 
-async def test_research_writes_the_document_before_cuba_hears_of_it(tmp_path):
+async def test_research_writes_the_document_before_cuba_hears_of_it(tmp_path, monkeypatch):
+    from server import live
     from server.live import CubaTools
+    monkeypatch.setattr(live, "doc_folder", lambda folder: tmp_path / "belgeler")
 
     async def nothing(*_):
         return None
@@ -237,10 +239,10 @@ async def test_research_writes_the_document_before_cuba_hears_of_it(tmp_path):
         if told:
             break
         await asyncio.sleep(0.01)
-    [doc] = list((tmp_path / "pazarlama").glob("arastirma-*-cicekci-rakipleri.md"))
+    [doc] = list((tmp_path / "belgeler").glob("arastirma-*-cicekci-rakipleri.md"))
     text = doc.read_text(encoding="utf-8")
     assert text.startswith("# Çiçekçi rakipleri") and "[a.com](https://a.com)" in text
-    assert "[ARAŞTIRMA BİTTİ" in told[0] and f"Belge: pazarlama/{doc.name}" in told[0]
+    assert "[ARAŞTIRMA BİTTİ" in told[0] and f"Belge: {doc}" in told[0]
     assert page[1]["state"] == "done" and page[1]["docs"][0]["ok"]
 
 
@@ -267,3 +269,27 @@ async def test_failed_research_says_there_is_no_document(tmp_path):
         await asyncio.sleep(0.01)
     assert "[ARAŞTIRMA OLMADI" in told[0] and "Belge yok" in told[0]
     assert not (tmp_path / "pazarlama").exists()
+
+
+def test_noise_lines_are_foreign_scripts_only():
+    from server.stt import is_noise
+    assert is_noise("요요, 소리 높아져 기봐.")
+    assert is_noise("麻酔 、 麻酔 に 関し て")
+    assert not is_noise("ASP Rubber için iki gönderi lazım.")
+    assert not is_noise("Yo, I'll get it.")
+
+
+def test_names_line_lists_topics_and_projects(tmp_path):
+    from server.live import names_line
+    from server.memory import learn
+    learn(tmp_path, "ASP Rubber", "Kauçuk parça üretir.")
+    line = names_line(tmp_path, {"projects": [{"name": "asprubberT", "path": "D:/a"}]})
+    assert line.startswith("Cuba, Çağan, ASP Rubber, asprubberT.")
+
+
+def test_research_goes_to_the_desktop_folder(tmp_path):
+    import datetime
+    from server.live import research_path
+    path = research_path("D:/projeler/magaza", "Çiçek fiyatları", datetime.date(2026, 11, 15))
+    assert path.parent.name == "magaza" and path.parent.parent.name == "belgeler"
+    assert path.name == "arastirma-2026-11-15-cicek-fiyatlari.md"

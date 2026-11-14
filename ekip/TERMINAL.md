@@ -38,11 +38,11 @@ Kod değiştiren her iş (tek satırlık düzeltme hariç) projenin kendisinde d
 - Ekip üyesine görev verirken bu klasörü yaz: "Tüm işi `<klasor>` içinde yap, proje klasörüne dokunma, bitince o klasörde commit et." Testçi de testleri aynı klasörde çalıştırır.
 - Birleştirmek ya da atmak Çağan'ın kararıdır; sen yapma. Raporunda dalın adını ve ne değiştiğini söyle; Çağan sesli olarak "birleştir" ya da "at" der.
 - Proje git deposu değilse (`{{dal}}` bunu söyler) doğrudan projede çalış.
-- Pazarlama belgeleri (`pazarlama/`) iş dalı gerektirmez.
+- Belgeler iş dalı gerektirmez; proje klasörüne değil masaüstündeki belgeler klasörüne yazılır.
 
 ## İş belgeleri
-Ekibin çalıştığı her işin bir belgesi olur (küçük, tek adımlık işlere belge açma). Proje içinde
-`docs/ekip/YYYY-MM-DD-kisa-konu.md` dosyasını sen açarsın; Çağan bunları panodaki Proje sekmesinden okur.
+Ekibin çalıştığı her işin bir belgesi olur (küçük, tek adımlık işlere belge açma). Çağan kaynak kodun içinde belge istemez:
+`{{belgeler}}\<proje klasörünün adı>\YYYY-MM-DD-kisa-konu.md` dosyasını sen açarsın; Çağan bunları panodaki Proje ve Belgeler sekmelerinden okur.
 Bölümler:
 - `## İstek`: Çağan ne istedi, kendi sözleriyle.
 - `## Plan`: kim ne yapacak, hangi dosyalar.
@@ -52,9 +52,9 @@ Bölümler:
 `## Test raporu` bölümüne kendisi yazar.
 
 ## Konuşma ve rapor
-- Araştırma ve rapor işlerinin sonucu her zaman bir belgeye yazılır: pazarlama işi `pazarlama/`, öteki her şey `docs/ekip/` altına. Çağan bunları yalnızca bu iki klasörden okuyabilir; başka yere yazma. Bu klasörlerin içinde alt klasör açma: ekran yalnızca klasörün kendisindeki dosyaları gösterir (ham veri `pazarlama/veri/` istisnadır).
-- Sunum istenirse pptx skill'iyle `.pptx` hazırla; PDF, Word ya da Excel istenirse ilgili skill'le o dosyayı üret. Bunlar da aynı iki klasöre gider ve ekranda açılır.
-- Bir belge yazıldıysa son mesajının ilk satırı `Belge: <proje içindeki yolu>` olsun.
+- Araştırma, rapor, pazarlama ve sunum işlerinin sonucu her zaman bir belgeye yazılır, hepsi `{{belgeler}}\<proje klasörünün adı>\` klasörüne (yoksa oluştur). Proje klasörünün içine belge yazma. Bu klasörde alt klasör açma: ekran yalnızca klasörün kendisindeki dosyaları gösterir (ham veri `veri/` alt klasörü istisnadır).
+- Sunum istenirse pptx skill'iyle `.pptx` hazırla; PDF, Word ya da Excel istenirse ilgili skill'le o dosyayı üret. Bunlar da aynı klasöre gider ve ekranda açılır.
+- Bir belge yazıldıysa son mesajının ilk satırı `Belge: <dosyanın tam yolu>` olsun.
 - Türkçe ve kısa konuş. Söylediğin her şey Çağan'a sesli olarak özetleniyor.
 - Bir iş bitince son mesajında önce bir iki cümlelik özet ver: ne yapıldı, kim yaptı, test sonucu, açık kalan ne. Ayrıntıyı altına yaz; Çağan terminalden okur.
 - Hata ya da başarısız testi gizleme. Çağan'ın kararı gereken bir şey varsa açıkça sor.

@@ -232,6 +232,15 @@ def recall(memory_dir: Path, topic: str) -> dict:
     return {"bulunamadi": True, "benzer_konular": found[:10]}
 
 
+def topic_names(memory_dir: Path) -> list[str]:
+    """The names of the topics Cuba knows, as written in each file's title."""
+    names = []
+    for path in sorted((memory_dir / KNOWLEDGE).glob("*.md")):
+        first = path.read_text(encoding="utf-8").split("\n", 1)[0]
+        names.append(first.lstrip("# ").strip() or path.stem)
+    return names
+
+
 def topics_block(memory_dir: Path) -> str:
     """One line per topic Cuba knows about, with how many things it knows."""
     lines = []
