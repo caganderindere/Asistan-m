@@ -1215,6 +1215,16 @@ def main(argv: list[str] | None = None) -> None:
 
         return await web_search(gemini_key, config.gemini_model, topic, system=RESEARCH_PROMPT, links=True)
 
+    async def what_we_did(period: str) -> dict:
+        from server.recap import recap
+
+        return await recap(ask, period, projects.listing().get("projects", []))
+
+    async def project_state(folder: str) -> dict:
+        from server.recap import project_state as state
+
+        return await state(ask, folder)
+
     async def ask_claude(question: str, folder: str) -> dict:
         from server.claude_chat import consult
         from server.config import BELGELER, doc_folder
@@ -1269,7 +1279,8 @@ def main(argv: list[str] | None = None) -> None:
 
         return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire, opener=Opener(),
                          look=look if gemini_key else None, remember=remember if gemini_key else None,
-                         consult=ask_claude,
+                         consult=ask_claude, recap=what_we_did if gemini_key else None,
+                         state=project_state if gemini_key else None,
                          life=life, search=search if gemini_key else None, notify=notify, schedule=schedule,
                          office=office, phone=phone, research=research if gemini_key else None, tell=tell_cuba)
 

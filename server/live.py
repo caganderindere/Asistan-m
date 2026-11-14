@@ -118,6 +118,20 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {"konu": {"type": "string"}}, "required": ["konu"]},
     },
     {
+        "name": "ne_yaptik",
+        "description": "Çağan'ın Claude Code oturumlarını ve projelere atılan commit'leri okuyup bugün, dün ya da "
+                       "bu hafta neler yapıldığını anlatır.",
+        "parameters": {"type": "object", "properties": {
+            "donem": {"type": "string", "enum": ["bugun", "dun", "hafta"]}}, "required": ["donem"]},
+    },
+    {
+        "name": "proje_durumu",
+        "description": "Bir projenin ne durumda olduğunu anlatır: son yapılanlar, kaydedilmemiş değişiklikler, "
+                       "açık iş dalları, son belgeler, sıradaki adım.",
+        "parameters": {"type": "object", "properties": {
+            "proje": {"type": "string", "description": "Proje adı; söylenmediyse açık olan proje."}}},
+    },
+    {
         "name": "claude_danis",
         "description": "Bilmediğin bir şeyi Claude'a danışır: bir projenin içi (ne yapıyor, nasıl çalışıyor, hangi "
                        "dosyada ne var), teknik bir konu. Claude proje dosyalarını okur, hiçbir şeyi değiştirmez. "
@@ -385,7 +399,11 @@ class CubaTools:
         look: Callable[[str], Awaitable[dict]] | None = None,
         remember: Callable[[str], Awaitable[dict]] | None = None,
         consult: Callable[[str, str], Awaitable[dict]] | None = None,
+        recap: Callable[[str], Awaitable[dict]] | None = None,
+        state: Callable[[str], Awaitable[dict]] | None = None,
     ) -> None:
+        self._recap = recap  # server/recap.py: what was done, from Claude Code's sessions and git
+        self._state = state  # server/recap.py: one project's state
         self._consult = consult  # server/claude_chat.py: read-only Claude Code in the project
         self._look = look  # server/screen.py: a screenshot read by Gemini
         self._remember = remember  # server/semantic.py: search by meaning
@@ -532,6 +550,16 @@ class CubaTools:
                 return confirm(self.memory_dir, str(args["konu"]), str(args["bilgi"]), bool(args.get("dogru")))
             if name == "bilgi_oku" and str(args.get("konu", "")).strip():
                 return recall(self.memory_dir, str(args["konu"]))
+            if name == "ne_yaptik" and self._recap is not None:
+                return await self._recap(str(args.get("donem") or "bugun"))
+            if name == "proje_durumu" and self._state is not None:
+                listing = self.projects()
+                wanted = str(args.get("proje", "")).strip()
+                folder = find_project(listing, wanted) if wanted else listing.get("current")
+                if folder is None:
+                    names = ", ".join(p["name"] for p in listing.get("projects", []))
+                    return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
+                return await self._state(folder)
             if name == "claude_danis" and self._consult is not None and str(args.get("soru", "")).strip():
                 listing = self.projects()
                 wanted = str(args.get("proje", "")).strip()
