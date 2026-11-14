@@ -1320,9 +1320,34 @@ $('voicePick').addEventListener('change', async () => {
     : 'Ses kaydedilemedi.';
 });
 
+/** Facts Cuba heard but Çağan has not confirmed: one tap says right or wrong. */
+async function showUnsure() {
+  const data = await fetch('/api/teyit').then((r) => r.json()).catch(() => ({ bilgiler: [] }));
+  $('unsureList').replaceChildren(...(data.bilgiler.length ? data.bilgiler.map(({ konu, bilgi }) => {
+    const item = document.createElement('li');
+    item.className = 'unsure';
+    const text = document.createElement('span');
+    text.append(Object.assign(document.createElement('small'), { textContent: konu }), document.createElement('br'), bilgi);
+    const answer = (dogru) => async () => {
+      const response = await fetch('/api/teyit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ konu, bilgi: bilgi.replace(/ \([^)]*\)$/, ''), dogru }),
+      }).catch(() => null);
+      if (response?.ok) item.remove();
+    };
+    const yes = Object.assign(document.createElement('button'), { type: 'button', textContent: '✓', title: 'Doğru' });
+    const no = Object.assign(document.createElement('button'), { type: 'button', textContent: '✗', title: 'Yanlış', className: 'ghost' });
+    yes.addEventListener('click', answer(true));
+    no.addEventListener('click', answer(false));
+    item.append(text, yes, no);
+    return item;
+  }) : [Object.assign(document.createElement('li'), { className: 'empty', textContent: 'Teyit bekleyen bilgi yok.' })]));
+}
+
 async function showMemory() {
   showVoices();
   showLife();
+  showUnsure();
   let data;
   try {
     data = await (await fetch('/api/memory')).json();

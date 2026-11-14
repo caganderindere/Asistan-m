@@ -114,6 +114,8 @@ JOB_CARDS = [
 ]
 API = {
     "/api/settings": {"live_voice": "Algenib", "voices": {"Algenib": "Kalın, pürüzlü — müdür sesi", "Charon": "Sakin"}},
+    "/api/teyit": {"bilgiler": [{"konu": "Mağaza", "bilgi": "En çok satan ürün kırmızı gül buketi. (Google, 2026-11-14)"},
+                                {"konu": "Mağaza", "bilgi": "Rakip Çiçeksepeti aynı gün teslimatı 16:00'ya kadar alıyor. (ekip raporu, 2026-11-14)"}]},
     "/api/memory": {"files": {"cagan.md": "", "bugun.md": "2026-11-14\n1. [x] Mağaza testleri\n2. [ ] Sınav çalışması",
                               "gorevler.md": "", "takvim.md": "", "notlar.md": ""}, "diary": []},
     "/api/life": {"week": [], "situation": None},
@@ -183,7 +185,7 @@ def main() -> None:
         page.click("#tabOffice")
         page.wait_for_timeout(2000)
         page.screenshot(path=OUT / "ofis.png")
-        for pane, name in (("talk", "konusma"), ("schedule", "zamanli"), ("docs", "belgeler"), ("project", "proje")):
+        for pane, name in (("talk", "konusma"), ("schedule", "zamanli"), ("docs", "belgeler"), ("project", "proje"), ("memory", "hafiza")):
             page.click(f'.side-tabs [data-pane="{pane}"]')
             page.wait_for_timeout(600)
             page.locator("aside.side").screenshot(path=OUT / f"{name}.png")

@@ -197,6 +197,13 @@ class Diary:
 KNOWLEDGE = "bilgi"
 TOPIC_CHARS = 12000
 _TR_ASCII = str.maketrans("çğıöşüâî", "cgiosuai")
+# Only what Çağan said himself is taken as true; the rest waits for his yes or no.
+UNSURE = " [teyitsiz]"
+WRONG = " [yanlış]"
+
+
+def told_by_cagan(source: str) -> bool:
+    return "çağan" in source.casefold() or "cagan" in source.casefold()
 
 
 def topic_slug(topic: str) -> str:
@@ -210,9 +217,12 @@ def learn(memory_dir: Path, topic: str, info: str, source: str = "", today: date
     path = memory_dir / KNOWLEDGE / f"{topic_slug(topic)}.md"
     text = path.read_text(encoding="utf-8") if path.exists() else f"# {topic}\n"
     if info.casefold() in text.casefold():
+        if told_by_cagan(source):
+            # Çağan saying it is his confirmation of what was only heard so far.
+            confirm(memory_dir, topic, info, True)
         return {"ok": True, "zaten_biliniyordu": True, "konu": path.stem}
     stamp = (today or datetime.date.today()).isoformat()
-    line = f"- {info} ({source + ', ' if source else ''}{stamp})"
+    line = f"- {info} ({source + ', ' if source else ''}{stamp})" + ("" if told_by_cagan(source) else UNSURE)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text.rstrip("\n") + f"\n{line}\n", encoding="utf-8")
     return {"ok": True, "konu": path.stem}
@@ -241,11 +251,40 @@ def topic_names(memory_dir: Path) -> list[str]:
     return names
 
 
+def confirm(memory_dir: Path, topic: str, piece: str, true: bool) -> dict:
+    """Mark the topic's line holding *piece* as confirmed by Çağan, or as wrong."""
+    path = memory_dir / KNOWLEDGE / f"{topic_slug(topic)}.md"
+    if not path.exists():
+        return {"error": f"'{topic}' diye bir konu yok."}
+    lines = path.read_text(encoding="utf-8").splitlines()
+    wanted = " ".join(piece.split()).casefold()
+    hits = [i for i, l in enumerate(lines) if l.startswith("- ") and wanted in l.casefold()]
+    if len(hits) != 1:
+        return {"error": "Bu bilgi bulunamadı." if not hits else "Birden çok satır uyuyor; daha belirgin söyle.",
+                "satirlar": [lines[i] for i in hits][:5]}
+    line = lines[hits[0]].replace(UNSURE, "").replace(WRONG, "")
+    lines[hits[0]] = line if true else line + WRONG
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"ok": True, "satir": lines[hits[0]]}
+
+
+def unconfirmed(memory_dir: Path) -> list[dict]:
+    """Every line still waiting for Çağan's yes or no."""
+    waiting = []
+    for path in sorted((memory_dir / KNOWLEDGE).glob("*.md")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        title = lines[0].lstrip("# ").strip() if lines else path.stem
+        waiting += [{"konu": title, "bilgi": l[2:].replace(UNSURE, "")} for l in lines if l.endswith(UNSURE)]
+    return waiting
+
+
 def topics_block(memory_dir: Path) -> str:
-    """One line per topic Cuba knows about, with how many things it knows."""
+    """One line per topic Cuba knows about, with how many things it knows and how many are unconfirmed."""
     lines = []
     for path in sorted((memory_dir / KNOWLEDGE).glob("*.md")):
         text = path.read_text(encoding="utf-8").splitlines()
         title = text[0].lstrip("# ").strip() if text else path.stem
-        lines.append(f"- {title} ({path.stem}, {sum(l.startswith('- ') for l in text)} bilgi)")
+        unsure = sum(l.endswith(UNSURE) for l in text)
+        lines.append(f"- {title} ({path.stem}, {sum(l.startswith('- ') for l in text)} bilgi"
+                     + (f", {unsure} teyitsiz" if unsure else "") + ")")
     return "\n".join(lines) or "Henüz konu yok."

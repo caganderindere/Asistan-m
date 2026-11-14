@@ -82,8 +82,23 @@ def test_each_topic_learns_into_its_own_file(tmp_path):
     learn(tmp_path, "asp rubber", "Kauçuk yedek parça üretir.", today=day)  # already known: not repeated
     learn(tmp_path, "Asistan", "Cuba, Gemini Live ile konuşur.", today=day)
     text = (tmp_path / "bilgi" / "asp-rubber.md").read_text(encoding="utf-8")
-    assert text == "# ASP Rubber\n- Kauçuk yedek parça üretir. (Google, 2026-11-15)\n"
-    assert "ASP Rubber (asp-rubber, 1 bilgi)" in topics_block(tmp_path)
+    assert text == "# ASP Rubber\n- Kauçuk yedek parça üretir. (Google, 2026-11-15) [teyitsiz]\n"
+    assert "ASP Rubber (asp-rubber, 1 bilgi, 1 teyitsiz)" in topics_block(tmp_path)
     assert "Gemini Live" in recall(tmp_path, "Asistan")["bilgi"]
     assert recall(tmp_path, "kauçuk")["konu"] == "asp-rubber"  # found by what it says
     assert recall(tmp_path, "yok")["bulunamadi"]
+
+
+def test_cagan_confirms_or_rejects_what_was_heard(tmp_path):
+    from server.memory import confirm, learn, unconfirmed
+    learn(tmp_path, "ASP Rubber", "Savunma parçası da üretir.", "Google")
+    learn(tmp_path, "ASP Rubber", "Merkezi Ankara'da.", "Google")
+    learn(tmp_path, "ASP Rubber", "CNC tesisi var.", "Çağan")
+    assert [u["bilgi"][:6] for u in unconfirmed(tmp_path)] == ["Savunm", "Merkez"]
+    assert confirm(tmp_path, "ASP Rubber", "savunma parçası", True)["ok"]
+    assert confirm(tmp_path, "ASP Rubber", "Merkezi Ankara", False)["satir"].endswith("[yanlış]")
+    assert unconfirmed(tmp_path) == []
+    learn(tmp_path, "Rabia", "Sevgilisi.", "Google")
+    learn(tmp_path, "Rabia", "Sevgilisi.", "Çağan")  # Çağan saying it again confirms it
+    assert unconfirmed(tmp_path) == []
+    assert "error" in confirm(tmp_path, "yok", "x", True)

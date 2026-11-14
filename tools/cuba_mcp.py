@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from server.config import BELGELER  # noqa: E402
-from server.memory import learn, recall, topics_block  # noqa: E402
+from server.memory import confirm, learn, recall, topics_block, unconfirmed  # noqa: E402
 
 MEMORY_DIR = ROOT / "asistan"
 DATA_DIR = ROOT / "data"
@@ -70,15 +70,20 @@ TOOLS = {
                 {}, lambda a: topics_block(MEMORY_DIR)),
     "bilgi_oku": ("Bir konu hakkında öğrenilenler (ör. bir proje ya da firma).",
                   {"konu": "Konu adı."}, lambda a: json.dumps(recall(MEMORY_DIR, a["konu"]), ensure_ascii=False)),
-    "ogren": ("Bir konuya kalıcı, tek cümlelik bir bilgi ekler; Cuba da bunu bilir.",
+    "ogren": ("Bir konuya kalıcı, tek cümlelik bir bilgi ekler; Cuba da bunu bilir. Kaynak Çağan değilse teyitsiz yazılır.",
               {"konu": "Konu adı.", "bilgi": "Tek cümle.", "kaynak": "Nereden öğrenildi."},
               lambda a: json.dumps(learn(MEMORY_DIR, a["konu"], a["bilgi"], a.get("kaynak", "Claude")), ensure_ascii=False)),
+    "teyit": ("Çağan bir bilgiyi doğruladıysa ya da yanlış dediyse o satırı işaretler (dogru: evet/hayır).",
+              {"konu": "Konu adı.", "bilgi": "Satırdan ayırt edici bir parça.", "dogru": "evet ya da hayır"},
+              lambda a: json.dumps(confirm(MEMORY_DIR, a["konu"], a["bilgi"], str(a.get("dogru", "")).casefold() in ("evet", "true", "doğru", "1")), ensure_ascii=False)),
+    "teyit_bekleyenler": ("Kaynağı Çağan olmayan, henüz doğrulanmamış bilgiler.",
+                          {}, lambda a: json.dumps(unconfirmed(MEMORY_DIR), ensure_ascii=False, indent=1)),
     "hatirla": ("Geçmiş konuşmalarda, bilgi dosyalarında, günlükte ve belgelerde anlamca arar.",
                 {"soru": "Ne aranıyor."}, None),
     "belgeler": ("Masaüstündeki belgeler klasöründeki son belgeler; proje verilirse yalnızca onun.",
                  {"proje": "Proje klasörünün adı (isteğe bağlı)."}, lambda a: documents(a.get("proje", ""))),
 }
-REQUIRED = {"bilgi_oku": ["konu"], "ogren": ["konu", "bilgi"], "hatirla": ["soru"]}
+REQUIRED = {"teyit": ["konu", "bilgi", "dogru"], "bilgi_oku": ["konu"], "ogren": ["konu", "bilgi"], "hatirla": ["soru"]}
 
 
 def tool_list() -> list[dict]:

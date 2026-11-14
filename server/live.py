@@ -22,7 +22,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
 from server.life import KINDS, SITUATIONS, LifeLog, weather
 from server.schedule import Schedule, parse_when
-from server.memory import learn, recall, topic_names, topics_block
+from server.memory import confirm, learn, recall, topic_names, topics_block
 from server.stt import is_noise
 from server import worktrees
 from server.config import ROOT, doc_folder
@@ -97,6 +97,19 @@ LIVE_TOOLS = [{"functionDeclarations": [
                 "kaynak": {"type": "string", "description": "Nereden: Çağan, Google, ekip raporu, bir adres."},
             },
             "required": ["konu", "bilgi"],
+        },
+    },
+    {
+        "name": "teyit",
+        "description": "Çağan bir bilginin doğru ya da yanlış olduğunu söyleyince o satırı işaretler.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "konu": {"type": "string"},
+                "bilgi": {"type": "string", "description": "Satırdan ayırt edici bir parça."},
+                "dogru": {"type": "boolean"},
+            },
+            "required": ["konu", "bilgi", "dogru"],
         },
     },
     {
@@ -490,6 +503,8 @@ class CubaTools:
                 return await self._search(str(args["soru"]))
             if name == "ogren" and str(args.get("konu", "")).strip() and str(args.get("bilgi", "")).strip():
                 return learn(self.memory_dir, str(args["konu"]), str(args["bilgi"]), str(args.get("kaynak") or ""))
+            if name == "teyit" and str(args.get("konu", "")).strip() and str(args.get("bilgi", "")).strip():
+                return confirm(self.memory_dir, str(args["konu"]), str(args["bilgi"]), bool(args.get("dogru")))
             if name == "bilgi_oku" and str(args.get("konu", "")).strip():
                 return recall(self.memory_dir, str(args["konu"]))
             if name == "ekrana_bak" and self._look is not None:

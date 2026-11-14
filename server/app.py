@@ -452,6 +452,22 @@ def create_app(
         (memory_dir / name).write_text(str(body.get("text", "")), encoding="utf-8")
         return JSONResponse({"ok": True})
 
+    @app.get("/api/teyit")
+    async def unconfirmed_facts() -> JSONResponse:
+        from server.memory import unconfirmed
+
+        return JSONResponse({"bilgiler": unconfirmed(memory_dir)})
+
+    @app.post("/api/teyit")
+    async def confirm_fact(request: Request) -> JSONResponse:
+        if not same_site(request) or request.headers.get("content-type") != "application/json":
+            return JSONResponse({"error": "Yetkisiz istek."}, status_code=403)
+        from server.memory import confirm
+
+        body = await request.json()
+        done = confirm(memory_dir, str(body.get("konu", "")), str(body.get("bilgi", "")), bool(body.get("dogru")))
+        return JSONResponse(done, status_code=200 if done.get("ok") else 400)
+
     @app.post("/api/diary")
     async def diary_today(request: Request) -> JSONResponse:
         """Write today's page now, without waiting for the day to end."""
