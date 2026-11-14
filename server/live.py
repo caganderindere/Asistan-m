@@ -22,6 +22,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from server.gemini_bridge import MEMORY_DIR, MEMORY_FILES, TOOLS, memory_block, now_line, run_program
 from server.life import KINDS, SITUATIONS, LifeLog, weather
 from server.schedule import Schedule, parse_when
+from server.memory import learn, recall, topics_block
 from server import worktrees
 from server.config import ROOT
 from server.usage import GEMINI
@@ -82,6 +83,25 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "name": "ara",
         "description": "Güncel bir bilgiyi Google'da arar: haber, maç sonucu, trafik, fiyat, açılış saati, bir yer, bir olay.",
         "parameters": {"type": "object", "properties": {"soru": {"type": "string"}}, "required": ["soru"]},
+    },
+    {
+        "name": "ogren",
+        "description": "Kalıcı bir bilgiyi kendi konu dosyasına ekler (bir proje, firma, kişi ya da konu hakkında). "
+                       "Her konunun ayrı dosyası vardır; eskiler silinmez.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "konu": {"type": "string", "description": "Bilginin konusu: proje, firma, kişi ya da konu adı."},
+                "bilgi": {"type": "string", "description": "Tek cümle."},
+                "kaynak": {"type": "string", "description": "Nereden: Çağan, Google, ekip raporu, bir adres."},
+            },
+            "required": ["konu", "bilgi"],
+        },
+    },
+    {
+        "name": "bilgi_oku",
+        "description": "Bir konu hakkında öğrendiklerini okur. Konu açılınca, cevap vermeden önce bak.",
+        "parameters": {"type": "object", "properties": {"konu": {"type": "string"}}, "required": ["konu"]},
     },
     {
         "name": "arastir",
@@ -239,7 +259,8 @@ def live_prompt(
     return (
         f"{PROMPT.read_text(encoding='utf-8')}\n{now_line(now or datetime.datetime.now())}\n\n"
         f"# Projeler\n{project_block(projects or {})}\n\n"
-        f"# Hafıza dosyaları\n{memory_block(memory_dir)}"
+        f"# Hafıza dosyaları\n{memory_block(memory_dir)}\n\n"
+        f"# Bilgi konuların (içini `bilgi_oku` ile oku)\n{topics_block(memory_dir)}"
         + (f"\n\n# Son günlük sayfan\n{diary}" if diary else "")
     )
 
@@ -355,6 +376,7 @@ class CubaTools:
             path.write_text(text, encoding="utf-8")
             name = path.relative_to(folder).as_posix()
             docs = [{"name": name, "path": str(path), "ok": True, "kb": round(path.stat().st_size / 1024, 1)}]
+            learn(self.memory_dir, project, f"Araştırma \"{topic}\": {name}", "Google")
             told = f"[ARAŞTIRMA BİTTİ — {project}]\nBelge: {name} (sunucu yazdı, var)\n{result['cevap'][:1500]}"
         self._notify({"type": "job", "project": project, "state": "done", "docs": docs})
         if self._tell is not None:
@@ -422,6 +444,10 @@ class CubaTools:
                 return await weather(str(args["yer"]))
             if name == "ara" and self._search is not None and str(args.get("soru", "")).strip():
                 return await self._search(str(args["soru"]))
+            if name == "ogren" and str(args.get("konu", "")).strip() and str(args.get("bilgi", "")).strip():
+                return learn(self.memory_dir, str(args["konu"]), str(args["bilgi"]), str(args.get("kaynak") or ""))
+            if name == "bilgi_oku" and str(args.get("konu", "")).strip():
+                return recall(self.memory_dir, str(args["konu"]))
             if name == "ise_al" and self._hire is not None:
                 return await self._hire(str(args.get("ad", "")), str(args.get("gorev", "")), str(args.get("model") or "sonnet"))
             if name == "isten_cikar" and self._fire is not None:

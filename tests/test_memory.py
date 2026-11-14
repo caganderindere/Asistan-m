@@ -73,3 +73,17 @@ def test_recent_keeps_the_end_of_the_day_within_budget(tmp_path):
     rows = tail.splitlines()
     assert rows[-1].endswith("satır 49") and len(tail) <= 200 and "satır 0" not in tail
     assert log.recent("2000-01-01") == ""
+
+
+def test_each_topic_learns_into_its_own_file(tmp_path):
+    from server.memory import learn, recall, topics_block
+    day = datetime.date(2026, 11, 15)
+    assert learn(tmp_path, "ASP Rubber", "Kauçuk yedek parça üretir.", "Google", day)["konu"] == "asp-rubber"
+    learn(tmp_path, "asp rubber", "Kauçuk yedek parça üretir.", today=day)  # already known: not repeated
+    learn(tmp_path, "Asistan", "Cuba, Gemini Live ile konuşur.", today=day)
+    text = (tmp_path / "bilgi" / "asp-rubber.md").read_text(encoding="utf-8")
+    assert text == "# ASP Rubber\n- Kauçuk yedek parça üretir. (Google, 2026-11-15)\n"
+    assert "ASP Rubber (asp-rubber, 1 bilgi)" in topics_block(tmp_path)
+    assert "Gemini Live" in recall(tmp_path, "Asistan")["bilgi"]
+    assert recall(tmp_path, "kauçuk")["konu"] == "asp-rubber"  # found by what it says
+    assert recall(tmp_path, "yok")["bulunamadi"]

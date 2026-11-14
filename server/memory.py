@@ -31,12 +31,15 @@ o gün verdiği raporlar ve günlük hayat kayıtları (spor, yol, yemek, uyku�
 2. "ogrenilenler": Çağan hakkında kalıcı, yeni öğrenilen bilgiler (tercih, alışkanlık, önemli proje, kişi,
    hedef, hoşlanmadığı şey, Cuba'yı düzelttiği bir konu). Geçici şeyleri (bugünkü iş, saat) yazma.
    Defterde zaten olanı tekrar yazma. Her biri bir bölüm adı ve tek cümle.
+3. "konular": Çağan'ın kendisi dışında kalıcı bilgiler (bir proje, firma, kişi, konu hakkında): her biri
+   konu adı (proje ya da firma adı) ve tek cümle. Bunlar deftere değil, konunun kendi dosyasına gider.
 Bölümler: {sections}
 
 Defterin şu anki hâli:
 {profile}
 
-Yalnızca şu JSON'u döndür: {{"gunluk": "- ...\\n- ...", "ogrenilenler": [{{"bolum": "...", "bilgi": "..."}}]}}"""
+Yalnızca şu JSON'u döndür: {{"gunluk": "- ...\\n- ...", "ogrenilenler": [{{"bolum": "...", "bilgi": "..."}}],
+"konular": [{{"konu": "...", "bilgi": "..."}}]}}"""
 
 Ask = Callable[[str, str, bool], Awaitable[str]]
 
@@ -181,5 +184,59 @@ class Diary:
         for old in sorted(self.folder.glob("*.md"))[:-DIARY_KEEP]:
             old.unlink()
         learned = add_facts(self.profile, [f for f in data.get("ogrenilenler", []) if isinstance(f, dict)])
+        for fact in data.get("konular", []):
+            if isinstance(fact, dict) and str(fact.get("konu", "")).strip() and str(fact.get("bilgi", "")).strip():
+                if not learn(self.profile.parent, str(fact["konu"]), str(fact["bilgi"]), "günlük").get("zaten_biliniyordu"):
+                    learned.append(f"{fact['konu']}: {fact['bilgi']}")
         return {"page": page, "learned": learned}
 
+
+
+# What Cuba learns about the world goes one file per topic under asistan/bilgi: a project, a company,
+# a person, a subject. Only the list of topics rides in the prompt; a topic is read when it comes up.
+KNOWLEDGE = "bilgi"
+TOPIC_CHARS = 12000
+_TR_ASCII = str.maketrans("çğıöşüâî", "cgiosuai")
+
+
+def topic_slug(topic: str) -> str:
+    slug = "".join(c if c.isalnum() else "-" for c in topic.casefold().translate(_TR_ASCII))
+    return "-".join(part for part in slug.split("-") if part)[:60].rstrip("-") or "genel"
+
+
+def learn(memory_dir: Path, topic: str, info: str, source: str = "", today: datetime.date | None = None) -> dict:
+    """Add one line to the topic's file, unless it is already known."""
+    topic, info = " ".join(topic.split()), " ".join(info.split())
+    path = memory_dir / KNOWLEDGE / f"{topic_slug(topic)}.md"
+    text = path.read_text(encoding="utf-8") if path.exists() else f"# {topic}\n"
+    if info.casefold() in text.casefold():
+        return {"ok": True, "zaten_biliniyordu": True, "konu": path.stem}
+    stamp = (today or datetime.date.today()).isoformat()
+    line = f"- {info} ({source + ', ' if source else ''}{stamp})"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text.rstrip("\n") + f"\n{line}\n", encoding="utf-8")
+    return {"ok": True, "konu": path.stem}
+
+
+def recall(memory_dir: Path, topic: str) -> dict:
+    """A topic's file; if no file has that name, the topics whose name or text mention it."""
+    folder = memory_dir / KNOWLEDGE
+    path = folder / f"{topic_slug(topic)}.md"
+    if path.exists():
+        return {"konu": path.stem, "bilgi": path.read_text(encoding="utf-8")[-TOPIC_CHARS:]}
+    wanted = topic.casefold().strip()
+    found = [p.stem for p in sorted(folder.glob("*.md"))
+             if topic_slug(topic) in p.stem or wanted in p.read_text(encoding="utf-8").casefold()]
+    if len(found) == 1:
+        return recall(memory_dir, found[0])
+    return {"bulunamadi": True, "benzer_konular": found[:10]}
+
+
+def topics_block(memory_dir: Path) -> str:
+    """One line per topic Cuba knows about, with how many things it knows."""
+    lines = []
+    for path in sorted((memory_dir / KNOWLEDGE).glob("*.md")):
+        text = path.read_text(encoding="utf-8").splitlines()
+        title = text[0].lstrip("# ").strip() if text else path.stem
+        lines.append(f"- {title} ({path.stem}, {sum(l.startswith('- ') for l in text)} bilgi)")
+    return "\n".join(lines) or "Henüz konu yok."
