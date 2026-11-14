@@ -1572,10 +1572,11 @@ setInterval(loadPlan, 120_000); // Cuba writes the plan too
 
 // ── Assistant view: the orb, its ripples, the plan when the talk turns to it ──
 
-const VOICE_COLORS = { idle: '#5C6B88', listening: '#4FD8FF', working: '#A77BFF', speaking: '#39E09B', error: '#FF4D5E' };
+const VOICE_COLORS = { idle: '#6C86FF', listening: '#4FD8FF', working: '#A77BFF', speaking: '#39E09B', error: '#FF4D5E' };
 // Talk about the day's work opens the plan beside the orb.
 const PLAN_TALK = /plan|görev|yapılacak|yapacağım|todo|to-do|ajanda|iş listesi|bugün ne/i;
-const viz = { frame: 0, bins: new Uint8Array(64), level: new Float32Array(64), waves: [], waveAt: 0, said: '', clock: '' };
+const viz = { frame: 0, bins: new Uint8Array(64), level: new Float32Array(64), waves: [], waveAt: 0, said: '', clock: '',
+  rgb: [108, 134, 255], spin: 0, breath: 0, sphere: [] };
 const calmMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 function showAsstPlan(open) {
@@ -1730,81 +1731,173 @@ function drawAssistant(time) {
   }
   const loud = sum / 64;
 
-  // A glow behind everything, brighter as the voice gets louder.
-  const glow = ctx.createRadialGradient(cx, cy, r * .5, cx, cy, r * 3);
-  glow.addColorStop(0, `${color}${Math.round(40 + loud * 120).toString(16).padStart(2, '0')}`);
-  glow.addColorStop(1, `${color}00`);
+  // The colour glides to the new state's instead of jumping.
+  const want = hexRgb(color);
+  for (let i = 0; i < 3; i += 1) viz.rgb[i] += (want[i] - viz.rgb[i]) * (still ? 1 : .06);
+  const rgba = (a, lift = 0) => `rgba(${viz.rgb.map((c) => Math.round(c + (255 - c) * lift)).join(',')},${a})`;
+  const working = voiceState === 'working';
+  viz.spin += still ? 0 : (working ? .022 : .004) + loud * .03;
+  viz.breath = still ? 0 : Math.sin(time / 1400);
+
+  // A deep glow behind everything, brighter as the voice gets louder.
+  const glow = ctx.createRadialGradient(cx, cy, r * .3, cx, cy, r * 3.4);
+  glow.addColorStop(0, rgba(.22 + loud * .5));
+  glow.addColorStop(.45, rgba(.06 + loud * .12));
+  glow.addColorStop(1, rgba(0));
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, box.width, box.height);
+  ctx.globalCompositeOperation = 'lighter';
 
   // Ripples leave the orb on loud moments.
-  if (!still && loud > .18 && time - viz.waveAt > 240) { viz.waves.push({ r: r * 1.05, a: .7 }); viz.waveAt = time; }
+  if (!still && loud > .18 && time - viz.waveAt > 260) { viz.waves.push({ r: r * 1.1, a: .55 }); viz.waveAt = time; }
   viz.waves = viz.waves.filter((w) => w.a > 0);
   for (const w of viz.waves) {
-    w.r += 1.8;
-    w.a -= .009;
+    w.r += 1.6 + w.a * 2;
+    w.a -= .008;
     ctx.beginPath();
     ctx.arc(cx, cy, w.r, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = Math.max(0, w.a);
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = rgba(Math.max(0, w.a));
+    ctx.lineWidth = 1.5;
     ctx.stroke();
   }
-  ctx.globalAlpha = 1;
 
-  // Bars around the orb, mirrored left and right.
-  ctx.lineCap = 'round';
-  for (let k = 0; k < 128; k += 1) {
-    const v = viz.level[k < 64 ? k : 127 - k];
-    const angle = (k / 128) * Math.PI * 2 - Math.PI / 2;
-    const [from, to] = [r + 10, r + 12 + v * r * 1.1];
-    ctx.beginPath();
-    ctx.moveTo(cx + Math.cos(angle) * from, cy + Math.sin(angle) * from);
-    ctx.lineTo(cx + Math.cos(angle) * to, cy + Math.sin(angle) * to);
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = .35 + v * .65;
-    ctx.lineWidth = 2.6;
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-
-  // Slow HUD rings, one each way.
-  for (const [radius, speed, dash] of [[r * 1.95, 1, [3, 12]], [r * 2.3, -.6, [40, 18, 4, 18]]]) {
+  // HUD rings with ticks and arcs, turning slowly each way.
+  for (const [radius, speed, ticks, arcs] of [[r * 1.9, 1, 72, 3], [r * 2.25, -.55, 0, 5]]) {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(still ? 0 : time / 9000 * speed);
-    ctx.setLineDash(dash);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = rgba(.28);
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = .35;
-    ctx.lineWidth = 1.2;
     ctx.stroke();
+    for (let t = 0; t < ticks; t += 1) {
+      const a = t / ticks * Math.PI * 2;
+      const long = t % 6 === 0 ? 7 : 3;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * radius, Math.sin(a) * radius);
+      ctx.lineTo(Math.cos(a) * (radius - long), Math.sin(a) * (radius - long));
+      ctx.stroke();
+    }
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = rgba(.55);
+    for (let s = 0; s < arcs; s += 1) {
+      const a = s / arcs * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius + 4, a, a + Math.PI / (arcs * 2.4));
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
-  // The orb itself, swelling a little with the voice.
-  const size = r * (.92 + loud * .18);
-  const sphere = ctx.createRadialGradient(cx - size * .3, cy - size * .35, size * .1, cx, cy, size);
-  sphere.addColorStop(0, '#FFFFFF');
-  sphere.addColorStop(.25, color);
-  sphere.addColorStop(1, '#050A18');
-  ctx.beginPath();
-  ctx.arc(cx, cy, size, 0, Math.PI * 2);
-  ctx.fillStyle = sphere;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 30 + loud * 60;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-  if (voiceState === 'working' && !still) {
+  // The voice as a smooth closed wave around the sphere, mirrored left and right.
+  const wave = (scale, lift, alpha, width) => {
+    const pts = [];
+    for (let k = 0; k < 96; k += 1) {
+      const v = viz.level[Math.floor((k < 48 ? k : 95 - k) * 63 / 47)];
+      const angle = k / 96 * Math.PI * 2 - Math.PI / 2;
+      const d = r * 1.18 + v * r * scale + Math.sin(time / 600 + k * .5) * (still ? 0 : 1.5);
+      pts.push([cx + Math.cos(angle) * d, cy + Math.sin(angle) * d]);
+    }
     ctx.beginPath();
-    ctx.arc(cx, cy, size + 5, time / 300, time / 300 + Math.PI * 1.2);
-    ctx.strokeStyle = '#FFFFFF';
+    for (let k = 0; k <= 96; k += 1) {
+      const [a, b] = [pts[k % 96], pts[(k + 1) % 96]];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (k === 0) ctx.moveTo(...mid); else ctx.quadraticCurveTo(a[0], a[1], mid[0], mid[1]);
+    }
+    ctx.strokeStyle = rgba(alpha, lift);
+    ctx.lineWidth = width;
+    ctx.stroke();
+  };
+  wave(.95, 0, .25 + loud, 6);
+  wave(.7, .5, .5 + loud, 1.6);
+
+  // Two tilted orbits, each with a bright moon travelling along it.
+  for (const [tilt, speed, width] of [[.35, 1, 1.3], [-.9, -1.4, 1.15]]) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(tilt + (still ? 0 : time / 20000));
+    ctx.scale(1, .28);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * width, 0, Math.PI * 2);
+    ctx.restore();
+    ctx.strokeStyle = rgba(.22);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    const a = still ? 0 : time / 1500 * speed;
+    const [ox, oy] = [Math.cos(a) * r * width, Math.sin(a) * r * width * .28];
+    const [rx, ry] = [ox * Math.cos(tilt + time / 20000) - oy * Math.sin(tilt + time / 20000),
+      ox * Math.sin(tilt + time / 20000) + oy * Math.cos(tilt + time / 20000)];
+    const moon = ctx.createRadialGradient(cx + rx, cy + ry, 0, cx + rx, cy + ry, 9);
+    moon.addColorStop(0, rgba(1, .8));
+    moon.addColorStop(1, rgba(0));
+    ctx.fillStyle = moon;
+    ctx.fillRect(cx + rx - 9, cy + ry - 9, 18, 18);
+  }
+
+  // The plasma core: a soft blob whose edge wobbles with the voice.
+  const size = r * (.62 + loud * .22 + viz.breath * .02);
+  ctx.beginPath();
+  for (let k = 0; k <= 64; k += 1) {
+    const a = k / 64 * Math.PI * 2;
+    const wobble = Math.sin(a * 3 + time / 500) * .05 + Math.sin(a * 5 - time / 380) * .04 * (1 + loud * 4)
+      + viz.level[k % 64] * .25;
+    const d = size * (1 + (still ? 0 : wobble));
+    if (k === 0) ctx.moveTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d); else ctx.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+  }
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 1.2);
+  core.addColorStop(0, rgba(.95, .85));
+  core.addColorStop(.35, rgba(.55, .2));
+  core.addColorStop(1, rgba(.05));
+  ctx.fillStyle = core;
+  ctx.fill();
+
+  // A sphere of points turning in 3D around the core, pushed outward by the voice.
+  const n = viz.sphere.length;
+  for (let i = 0; i < n; i += 1) {
+    const [x0, y0, z0] = viz.sphere[i];
+    const band = viz.level[Math.floor((y0 + 1) / 2 * 63)];
+    const push = r * (.96 + band * .5 + (working ? Math.sin(time / 200 + i) * .03 : 0));
+    const [cs, sn] = [Math.cos(viz.spin), Math.sin(viz.spin)];
+    const x = x0 * cs - z0 * sn;
+    const z = x0 * sn + z0 * cs;
+    const [ct, st] = [Math.cos(.35), Math.sin(.35)];
+    const y = y0 * ct - z * st;
+    const zz = y0 * st + z * ct;
+    const depth = (zz + 1) / 2;  // 0 at the back, 1 at the front
+    const scale = 1 / (1.8 - zz * .6);
+    ctx.fillStyle = rgba(.12 + depth * .75, depth * .5);
+    const dot = .6 + depth * 1.5 + band * 1.5;
+    ctx.fillRect(cx + x * push * scale * 1.55 - dot / 2, cy + y * push * scale * 1.55 - dot / 2, dot, dot);
+  }
+
+  // While Cuba works, a bright arc sweeps around the sphere.
+  if (working && !still) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.08, time / 260, time / 260 + Math.PI * .9);
+    ctx.strokeStyle = rgba(.9, .6);
     ctx.lineWidth = 2.5;
     ctx.stroke();
   }
+  ctx.globalCompositeOperation = 'source-over';
 }
 
+/** "#4FD8FF" → [79, 216, 255] */
+function hexRgb(hex) {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+}
+
+/** *n* points spread evenly over a unit sphere (a Fibonacci lattice). */
+function spherePoints(n) {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  return Array.from({ length: n }, (_, i) => {
+    const y = 1 - (i + .5) / n * 2;
+    const ring = Math.sqrt(1 - y * y);
+    return [Math.cos(i * golden) * ring, y, Math.sin(i * golden) * ring];
+  });
+}
+
+viz.sphere = spherePoints(420);
 setState('idle');
 showMode('assistant');
 connect();
