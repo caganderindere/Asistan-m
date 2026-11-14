@@ -1199,6 +1199,22 @@ def main(argv: list[str] | None = None) -> None:
 
         return await web_search(gemini_key, config.gemini_model, topic, system=RESEARCH_PROMPT, links=True)
 
+    async def look(question: str) -> dict:
+        from server.screen import look as look_at_screen
+
+        return await look_at_screen(gemini_key, config.gemini_model, question)
+
+    semantic = None
+
+    async def remember(question: str) -> dict:
+        nonlocal semantic
+        if semantic is None:
+            from server.config import BELGELER
+            from server.semantic import SemanticMemory
+
+            semantic = SemanticMemory(gemini_key, data_dir, MEMORY_DIR, BELGELER)
+        return await semantic.search(question)
+
     async def tell_cuba(text: str) -> None:
         """Background work reaching Cuba: on the voice if the line is open, else on Telegram."""
         if live is not None and live.active:
@@ -1229,6 +1245,7 @@ def main(argv: list[str] | None = None) -> None:
         from server.live import CubaTools
 
         return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire, opener=Opener(),
+                         look=look if gemini_key else None, remember=remember if gemini_key else None,
                          life=life, search=search if gemini_key else None, notify=notify, schedule=schedule,
                          office=office, phone=phone, research=research if gemini_key else None, tell=tell_cuba)
 

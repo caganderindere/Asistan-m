@@ -20,6 +20,9 @@ dependencies = [
     "numpy",
     # "Cuba arıyor": push notifications to the phone's home-screen app.
     "pywebpush",
+    # Cuba looks at the screen (ekrana_bak).
+    "mss",
+    "pillow",
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12==9.*",
 ]

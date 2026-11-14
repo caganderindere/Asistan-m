@@ -105,6 +105,22 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {"konu": {"type": "string"}}, "required": ["konu"]},
     },
     {
+        "name": "ekrana_bak",
+        "description": "Çağan'ın bilgisayar ekranına bakar ve soruyu ekrandakine göre cevaplar: hata, sayfa, "
+                       "tablo, belge, kod. \"Ekrana bak\", \"bu ne\", \"şunu oku\" denince kullan.",
+        "parameters": {"type": "object", "properties": {
+            "soru": {"type": "string", "description": "Çağan'ın ekranla ilgili sorusu, kendi sözleriyle."}},
+            "required": ["soru"]},
+    },
+    {
+        "name": "hatirla",
+        "description": "Geçmiş konuşmalarda, öğrendiklerinde, günlükte ve belgelerde anlamca arar. "
+                       "\"Geçen hafta ne konuşmuştuk\", \"X hakkında ne demiştim\", \"hangi belgeyi hazırlamıştık\" için.",
+        "parameters": {"type": "object", "properties": {
+            "soru": {"type": "string", "description": "Ne hatırlanmak isteniyor, ayrıntısıyla."}},
+            "required": ["soru"]},
+    },
+    {
         "name": "ac",
         "description": "Bu bilgisayarda bir şey açar: YouTube'da şarkı ya da video (ilk sonuç çalar), bir site, "
                        "masaüstündeki belgeler klasöründen bir belge ya da bir program.",
@@ -339,7 +355,11 @@ class CubaTools:
         research: Callable[[str], Awaitable[dict]] | None = None,
         tell: Callable[[str], Awaitable[None]] | None = None,
         opener=None,
+        look: Callable[[str], Awaitable[dict]] | None = None,
+        remember: Callable[[str], Awaitable[dict]] | None = None,
     ) -> None:
+        self._look = look  # server/screen.py: a screenshot read by Gemini
+        self._remember = remember  # server/semantic.py: search by meaning
         self.opener = opener  # server/opener.py: YouTube, sites, documents, programs on this PC
         self._research = research  # Gemini with Google Search: a document without Claude tokens
         self._studies: set[asyncio.Task] = set()
@@ -472,6 +492,10 @@ class CubaTools:
                 return learn(self.memory_dir, str(args["konu"]), str(args["bilgi"]), str(args.get("kaynak") or ""))
             if name == "bilgi_oku" and str(args.get("konu", "")).strip():
                 return recall(self.memory_dir, str(args["konu"]))
+            if name == "ekrana_bak" and self._look is not None:
+                return await self._look(str(args.get("soru", "")))
+            if name == "hatirla" and self._remember is not None and str(args.get("soru", "")).strip():
+                return await self._remember(str(args["soru"]))
             if name == "ac" and self.opener is not None:
                 return await self.opener.open(str(args.get("tur", "")), str(args.get("ne", "")))
             if name == "ise_al" and self._hire is not None:
