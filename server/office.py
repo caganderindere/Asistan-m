@@ -104,7 +104,7 @@ class Office:
             await self._tell(f"[EKİP RAPORU — {Path(folder).name}] {worker.role.name}: {report}")
 
         self._background(work())
-        return {"ok": True, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+        return {"ok": True, "not": "Henüz hiçbir şey oluşmadı, ekip çalışıyor. [EKİP RAPORU] gelmeden bitti, oluştu ya da hazır deme."}
 
     async def _show_meeting(self, state: dict | None) -> None:
         if self._meeting_folder:

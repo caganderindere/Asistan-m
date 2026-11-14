@@ -148,6 +148,9 @@ function handle(msg) {
       if (msg.channel === 'birebir') addFeed(msg.sender, msg.name, `→ ${msg.to_name}: ${msg.text}`, 'talk office');
       else if (msg.channel === 'rapor') addFeed(msg.sender, msg.name, `Rapor: ${msg.text}`, 'talk office');
       break;
+    case 'job':
+      showJob(msg);
+      break;
     case 'situation':
       showSituation(msg.situation);
       break;
@@ -1278,6 +1281,10 @@ async function showProject() {
     }));
   }
   for (const doc of info.docs) {
+    if (doc.kind !== 'md') {
+      parts.push(fileLink(doc));
+      continue;
+    }
     const details = document.createElement('details');
     details.className = 'paper';
     details.append(Object.assign(document.createElement('summary'), { textContent: doc.name }));
@@ -1367,6 +1374,7 @@ function showPane(next) {
     if (section.tagName !== 'BUTTON') section.hidden = section.dataset.pane !== next;
   }
   if (next === 'project') showProject();
+  if (next === 'docs') showDocuments();
   if (next === 'memory') showMemory();
   if (next === 'feed') {
     delete document.querySelector('.side-tabs [data-pane="feed"]').dataset.fresh;
@@ -1580,6 +1588,92 @@ $('asstPlanClose').addEventListener('click', () => showAsstPlan(false));
 $('asstPlanEdit').addEventListener('click', openPlan);
 $('asstOrb').addEventListener('click', () => orb.click());
 
+/** Work handed to the team, one card per project under the orb: working, then its checked documents. */
+const jobCards = new Map();
+function showJob({ project, state, text = '', docs = [] }) {
+  let card = jobCards.get(project);
+  if (!card) {
+    if (state !== 'working') return;  // a report with no card here: nothing was started from this page
+    card = document.createElement('li');
+    jobCards.set(project, card);
+    $('asstJobs').append(card);
+  }
+  clearTimeout(card.timer);
+  const missing = docs.filter((d) => !d.ok);
+  card.className = state === 'working' ? 'working' : missing.length ? 'missing' : 'done';
+  const title = Object.assign(document.createElement('b'), { textContent: project });
+  const parts = [title];
+  if (state === 'working') {
+    parts.push(document.createTextNode(text));
+  } else {
+    parts.push(document.createTextNode(docs.length ? '' : 'iş bitti'));
+    for (const doc of docs) {
+      if (!doc.ok) {
+        parts.push(document.createTextNode(`belge bulunamadı: ${doc.name}`));
+        continue;
+      }
+      const icon = FILE_ICONS[doc.name.split('.').pop().toLowerCase()] ?? '📄';
+      const open = Object.assign(document.createElement('button'), { type: 'button', textContent: `${icon} ${doc.name}` });
+      open.addEventListener('click', () => openDocument(doc.path));
+      parts.push(open);
+    }
+    // A finished card with nothing to open goes away by itself; one with documents stays until opened.
+    if (!docs.some((d) => d.ok)) card.timer = setTimeout(() => { card.remove(); jobCards.delete(project); }, 60_000);
+  }
+  card.replaceChildren(...parts);
+}
+
+const FILE_ICONS = { pptx: '📊', pdf: '📕', docx: '📝', xlsx: '📈', csv: '📈', html: '🌐', png: '🖼', jpg: '🖼' };
+const fileUrl = (path) => `/api/belge/indir?path=${encodeURIComponent(path)}`;
+
+/** A deck, PDF or other file the page cannot show itself: opens in a new tab, from where it can be saved. */
+function fileLink(doc) {
+  return Object.assign(document.createElement('a'), {
+    className: 'file-link', href: fileUrl(doc.path), target: '_blank', rel: 'noopener',
+    textContent: `${FILE_ICONS[doc.kind] ?? '📄'} ${doc.name}${doc.kb ? ` · ${doc.kb} KB` : ''}`,
+  });
+}
+
+async function openDocument(path) {
+  if (!path.toLowerCase().endsWith('.md')) {
+    window.open(fileUrl(path), '_blank', 'noopener');
+    return;
+  }
+  try {
+    const response = await fetch(`/api/belge?path=${encodeURIComponent(path)}`);
+    const doc = await response.json();
+    $('docTitle').textContent = doc.name ?? 'Belge';
+    $('docText').textContent = doc.text ?? doc.error;
+  } catch {
+    $('docTitle').textContent = 'Belge';
+    $('docText').textContent = 'Belge açılamadı.';
+  }
+  $('docDialog').showModal();
+}
+
+/** Every project's documents in one list, newest first; Markdown opens on the page, the rest in a tab. */
+async function showDocuments() {
+  let docs = [];
+  try {
+    ({ docs } = await (await fetch('/api/belgeler')).json());
+  } catch {
+    $('docsEmpty').textContent = 'Belgeler alınamadı.';
+  }
+  $('docsEmpty').hidden = docs.length > 0;
+  $('docsList').replaceChildren(...docs.map((doc) => {
+    const li = document.createElement('li');
+    const open = Object.assign(document.createElement('button'), {
+      type: 'button', className: 'doc-open',
+      textContent: `${doc.kind === 'md' ? '📄' : FILE_ICONS[doc.kind] ?? '📄'} ${doc.name}`,
+    });
+    open.addEventListener('click', () => openDocument(doc.path));
+    li.append(open, Object.assign(document.createElement('small'), {
+      textContent: `${doc.project} · ${doc.time.replace('T', ' ')} · ${doc.kb} KB`,
+    }));
+    return li;
+  }));
+}
+
 /** The words of the latest turn under the orb; talk of plans opens the plan. */
 function followTalk() {
   const last = history.lastElementChild;
@@ -1588,8 +1682,7 @@ function followTalk() {
   if (you + reply === viz.said) return;
   const fresh = (you + reply).slice(viz.said.length);
   viz.said = you + reply;
-  $('asstYou').textContent = you;
-  $('asstCuba').textContent = reply.length > 260 ? `…${reply.slice(-260)}` : reply;
+  // No captions under the orb: Çağan does not want to read the talk while speaking.
   // Only live talk counts: history loading on connect is no reason to open it.
   if ((state !== 'idle' || live.active) && (PLAN_TALK.test(fresh) || PLAN_TALK.test(you))) showAsstPlan(true);
 }

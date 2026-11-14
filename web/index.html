@@ -77,8 +77,7 @@
       <button class="asst-orb" id="asstOrb" type="button" aria-label="Cuba ile konuş"></button>
       <div class="asst-text" aria-live="polite">
         <p class="asst-status" id="asstStatus"></p>
-        <p class="asst-you" id="asstYou"></p>
-        <p class="asst-cuba" id="asstCuba"></p>
+        <ul class="asst-jobs" id="asstJobs" aria-label="Süren işler"></ul>
       </div>
       <button class="asst-plan-toggle ghost" id="asstPlanToggle" type="button" aria-expanded="false" aria-controls="asstPlan">
         📋 Günlük plan <span id="asstPlanCount"></span>
@@ -136,6 +135,7 @@
       <button type="button" role="tab" data-pane="schedule" aria-selected="false">Zamanlı</button>
       <button type="button" role="tab" data-pane="outputs" aria-selected="false">Çıktılar</button>
       <button type="button" role="tab" data-pane="project" aria-selected="false">Proje</button>
+      <button type="button" role="tab" data-pane="docs" aria-selected="false">Belgeler</button>
       <button type="button" role="tab" data-pane="memory" aria-selected="false">Hafıza</button>
     </div>
     <section class="panel" data-pane="talk">
@@ -155,6 +155,10 @@
     </section>
     <section class="panel" data-pane="project" hidden>
       <div class="project-info" id="projectInfo"></div>
+    </section>
+    <section class="panel" data-pane="docs" hidden>
+      <ol class="doc-list" id="docsList"></ol>
+      <p class="empty" id="docsEmpty">Ekibin bütün projelerde yazdığı belgeler, araştırmalar ve sunumlar burada tarih sırasıyla birikir.</p>
     </section>
     <section class="panel" data-pane="memory" hidden>
       <div class="memory-head">
@@ -210,6 +214,12 @@
     <ul id="planList"></ul>
     <form id="planAdd"><input id="planInput" placeholder="Yeni iş ekle…" autocomplete="off" aria-label="Yeni iş"><button>Ekle</button></form>
     <p class="meta" id="planState" role="status"></p>
+  </dialog>
+
+  <dialog class="paper-view" id="docDialog" aria-labelledby="docTitle">
+    <button class="close" type="button" data-close aria-label="Kapat">×</button>
+    <h3 id="docTitle"></h3>
+    <pre class="readme" id="docText"></pre>
   </dialog>
 
   <dialog class="pc" id="pcDialog" aria-labelledby="pcTitle">

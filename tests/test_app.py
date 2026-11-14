@@ -364,3 +364,41 @@ def test_hiring_through_the_app_tells_the_page(tmp_path, fake_bridge):
             roster = read_until(ws, "roster")[-1]
     assert result["ok"] and rewrites == [1]
     assert roster["members"][-1] == {"id": "tasarimci", "name": "Tasarımcı", "duty": "arayüz", "model": "opus", "hired": True}
+
+
+def test_project_tab_shows_marketing_documents_too(tmp_path):
+    from server.app import describe_project
+
+    (tmp_path / "docs" / "ekip").mkdir(parents=True)
+    (tmp_path / "docs" / "ekip" / "2026-11-14-is.md").write_text("iş", encoding="utf-8")
+    (tmp_path / "pazarlama").mkdir()
+    (tmp_path / "pazarlama" / "rakip-analizi.md").write_text("r" * 9000, encoding="utf-8")
+    docs = {d["name"]: d["text"] for d in describe_project(str(tmp_path))["docs"]}
+    assert docs["2026-11-14-is"] == "iş" and len(docs["pazarlama/rakip-analizi"]) == 9000
+
+
+def test_job_card_opens_only_team_documents(client, tmp_path):
+    (tmp_path / "pazarlama").mkdir()
+    (tmp_path / "pazarlama" / "rapor.md").write_text("bulgu", encoding="utf-8")
+    (tmp_path / "gizli.md").write_text("x", encoding="utf-8")
+    ok = client.get("/api/belge", params={"path": str(tmp_path / "pazarlama" / "rapor.md")})
+    assert ok.json() == {"name": "rapor.md", "text": "bulgu"}
+    for path in (tmp_path / "gizli.md", tmp_path / "pazarlama" / ".." / "gizli.md", tmp_path / "pazarlama" / "yok.md"):
+        assert client.get("/api/belge", params={"path": str(path)}).status_code == 404
+
+
+def test_decks_and_pdfs_are_listed_and_served(client, tmp_path):
+    from server.app import team_documents
+
+    (tmp_path / "pazarlama").mkdir(exist_ok=True)
+    (tmp_path / "pazarlama" / "sunum.pptx").write_bytes(b"PK deck")
+    (tmp_path / "pazarlama" / "notlar.md").write_text("n", encoding="utf-8")
+    (tmp_path / "pazarlama" / "betik.py").write_text("x", encoding="utf-8")
+    kinds = {d["name"]: d["kind"] for d in team_documents(tmp_path)}
+    assert kinds == {"pazarlama/sunum.pptx": "pptx", "pazarlama/notlar": "md"}
+    got = client.get("/api/belge/indir", params={"path": str(tmp_path / "pazarlama" / "sunum.pptx")})
+    assert got.status_code == 200 and got.content == b"PK deck"
+    assert client.get("/api/belge/indir", params={"path": str(tmp_path / "pazarlama" / "betik.py")}).status_code == 404
+    docs = client.get("/api/belgeler").json()["docs"]
+    assert {d["name"] for d in docs} == {"pazarlama/sunum.pptx", "pazarlama/notlar"}
+    assert all(d["project"] == tmp_path.name for d in docs)

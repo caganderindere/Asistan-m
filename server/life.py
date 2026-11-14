@@ -167,13 +167,21 @@ async def weather(place: str, client: httpx.AsyncClient | None = None) -> dict:
     }
 
 
-async def web_search(key: str, model: str, question: str, client: httpx.AsyncClient | None = None) -> dict:
-    """A short, current answer from Gemini grounded in Google Search, with its sources."""
+SEARCH_PROMPT = "Google'da arayıp kısa, güncel ve Türkçe cevap ver. Bulamadığını uydurma."
+RESEARCH_PROMPT = """Sen bir araştırmacısın. Konuyu Google'da birkaç farklı açıdan ara ve Türkçe bir araştırma
+belgesi yaz: önce iki üç cümlelik bir özet, sonra `##` başlıklı bölümler (bulgular, karşılaştırma varsa tablo,
+öneriler). Rakam, fiyat ve tarih ver; hangisinin hangi kaynaktan geldiğini belirt. Bulamadığını uydurma,
+"bulunamadı" yaz. Yalnızca belgenin metnini yaz."""
+
+
+async def web_search(key: str, model: str, question: str, client: httpx.AsyncClient | None = None,
+                     system: str = SEARCH_PROMPT, links: bool = False) -> dict:
+    """A current answer from Gemini grounded in Google Search, with its sources (and their addresses)."""
     own = client is None
-    client = client or httpx.AsyncClient(timeout=httpx.Timeout(40, connect=8))
+    client = client or httpx.AsyncClient(timeout=httpx.Timeout(120 if links else 40, connect=8))
     body = {
         "contents": [{"role": "user", "parts": [{"text": question}]}],
-        "systemInstruction": {"parts": [{"text": "Google'da arayıp kısa, güncel ve Türkçe cevap ver. Bulamadığını uydurma."}]},
+        "systemInstruction": {"parts": [{"text": system}]},
         "tools": [{"google_search": {}}],
     }
     try:
@@ -183,11 +191,13 @@ async def web_search(key: str, model: str, question: str, client: httpx.AsyncCli
         GEMINI.add(data.get("usageMetadata"))
         candidate = data["candidates"][0]
         text = "".join(p.get("text", "") for p in candidate["content"].get("parts", []) if not p.get("thought"))
-        sources = [c["web"].get("title", "") for c in candidate.get("groundingMetadata", {}).get("groundingChunks", [])
-                   if "web" in c][:3]
+        webs = [c["web"] for c in candidate.get("groundingMetadata", {}).get("groundingChunks", []) if "web" in c]
     except (httpx.HTTPError, ValueError, KeyError, IndexError) as error:
         return {"error": f"Arama yapılamadı ({type(error).__name__})."}
     finally:
         if own:
             await client.aclose()
-    return {"cevap": text.strip(), "kaynaklar": sources}
+    answer = {"cevap": text.strip(), "kaynaklar": [w.get("title", "") for w in webs][:3]}
+    if links:
+        answer["adresler"] = [{"baslik": w.get("title", ""), "adres": w.get("uri", "")} for w in webs]
+    return answer

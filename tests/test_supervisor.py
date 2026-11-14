@@ -1,6 +1,6 @@
 import json
 
-from server.supervisor import Supervisor
+from server.supervisor import Supervisor, check_documents, documents_note, for_live, is_brief
 
 
 def fake_ask(*answers):
@@ -64,3 +64,29 @@ async def test_a_short_answer_is_said_as_written(tmp_path):
     said = await boss.on_stop("Ekibi dinlenme alanına gönderdim efendim. Ben toplantı odasında, sizin yanınızdayım.")
     assert said == {"speak": "Ekibi dinlenme alanına gönderdim efendim. Ben toplantı odasında, sizin yanınızdayım."}
     assert ask.asked == [] and boss.outputs == []
+
+
+async def test_a_short_report_naming_a_document_is_kept(tmp_path):
+    boss = Supervisor(None, tmp_path / "out.json")
+    boss.note_report("Belge: pazarlama/rakip-analizi.md\nÜç rakip incelendi.")
+    boss.note_report("Tamam patron.")
+    assert len(boss.outputs) == 1 and "rakip-analizi.md" in boss.outputs[0]["report"]
+    assert is_brief("Tamam patron.") and not is_brief("Belge: docs/ekip/2026-11-14-arastirma.md")
+
+
+def test_cuba_hears_a_long_reports_opening_and_end():
+    report = "Belge: docs/ekip/x.md\n" + "orta " * 2000 + "SON"
+    told = for_live(report)
+    assert told.startswith("Belge: docs/ekip/x.md") and told.endswith("SON") and len(told) < 4100
+    assert for_live("kısa") == "kısa"
+
+
+def test_named_documents_are_checked_on_disk(tmp_path):
+    (tmp_path / "pazarlama").mkdir()
+    (tmp_path / "pazarlama" / "var.md").write_text("x" * 2048, encoding="utf-8")
+    report = "Belge: `pazarlama/var.md`\nBir şey yapıldı.\n- Belge: docs/ekip/yok.md"
+    docs = check_documents(report, tmp_path)
+    assert [(d["name"], d["ok"]) for d in docs] == [("pazarlama/var.md", True), ("docs/ekip/yok.md", False)]
+    note = documents_note(docs)
+    assert "pazarlama/var.md: var (2.0 KB)" in note and "docs/ekip/yok.md: YOK" in note
+    assert documents_note(check_documents("Belgesiz rapor.", tmp_path)) == ""

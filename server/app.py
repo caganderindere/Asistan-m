@@ -41,7 +41,7 @@ from server.office_bus import OfficeBus
 from server.claude_chat import ClaudeChat
 from server.phone import Phone
 from server.memory import ConversationLog, Diary, ensure_profile
-from server.supervisor import Supervisor
+from server.supervisor import Supervisor, check_documents, documents_note, for_live
 from server.terminal import (
     AGENT_TOOLS, LEAD_DESK, PERMISSION_LINE, Terminal, TerminalCrew, TerminalPool, folder_key,
 )
@@ -662,12 +662,17 @@ def create_app(
         # Nobody at the screen: the phone hears about it, unless Çağan is asleep.
         asleep = (life.situation() or {}).get("situation") == "uykuda"
         far = telegram is not None and (boss.away or clients.active is None) and not asleep
+        docs: list[dict] = []
+        if kind == "stop":
+            # The documents the report names, checked on disk: the job card links the real ones.
+            docs = check_documents(str(body.get("text", "")), folder)
+            await clients.send({"type": "job", "project": name, "state": "done", "docs": docs})
         if kind == "stop" and live_on:
             # Cuba, on the line, passes the report on in his own words.
             report = str(body.get("text", ""))
             boss.note_report(report, folder)
             await clients.send({"type": "outputs", "items": boss.outputs})
-            await live.tell(f"[EKİP RAPORU — {name}]\n{report[-4000:]}")
+            await live.tell(f"[EKİP RAPORU — {name}]\n{for_live(report)}{documents_note(docs)}")
             return {}
         if kind == "permission" and far and not boss.away:
             await telegram.ask_approval(f"🔐 {name}: ekip bir işlem için onayını bekliyor. Ayrıntı terminalde.",
@@ -772,6 +777,31 @@ def create_app(
     @app.get("/api/project")
     async def project_summary() -> JSONResponse:
         return JSONResponse(await asyncio.to_thread(describe_project, projects.current))
+
+    @app.get("/api/belge")
+    async def document(path: str) -> JSONResponse:
+        """One team document to read on the page: Markdown under a project's docs/ekip or pazarlama."""
+        wanted = team_file(path, projects.paths())
+        if wanted is None or wanted.suffix.lower() != ".md":
+            return JSONResponse({"error": "Belge bulunamadı."}, status_code=404)
+        return JSONResponse({"name": wanted.name, "text": wanted.read_text(encoding="utf-8", errors="replace")})
+
+    @app.get("/api/belge/indir")
+    async def document_file(path: str) -> Response:
+        """A deck, PDF or any other team document, to open or save."""
+        wanted = team_file(path, projects.paths())
+        if wanted is None:
+            return JSONResponse({"error": "Belge bulunamadı."}, status_code=404)
+        return FileResponse(wanted, filename=wanted.name, content_disposition_type="inline")
+
+    @app.get("/api/belgeler")
+    async def all_documents() -> JSONResponse:
+        """Every project's team documents in one list, newest first, for the Belgeler tab."""
+        def gather() -> list[dict]:
+            found = [{**doc, "project": project_name(p)} for p in projects.paths() for doc in team_documents(p)]
+            return sorted(found, key=lambda doc: doc["time"], reverse=True)[:200]
+
+        return JSONResponse({"docs": await asyncio.to_thread(gather)})
 
     async def open_project(path: str, ws: WebSocket) -> None:
         if path not in projects.paths():
@@ -922,6 +952,34 @@ def _git(path: str, *args: str) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
+DOC_DIRS = ("docs/ekip", "pazarlama")  # where the team leaves its work (ekip/TERMINAL.md)
+DOC_TYPES = {".md", ".pptx", ".pdf", ".docx", ".xlsx", ".csv", ".html", ".png", ".jpg"}
+
+
+def team_documents(folder: str | Path) -> list[dict]:
+    """The team's documents in a project, newest first: papers, research, decks, PDFs."""
+    files = [f for sub in DOC_DIRS for f in (Path(folder) / sub).glob("*")
+             if f.is_file() and f.suffix.lower() in DOC_TYPES]
+    # Papers written the same second keep their dated names' order.
+    files.sort(key=lambda f: (int(f.stat().st_mtime), f.name), reverse=True)
+    docs = []
+    for f in files:
+        kind = f.suffix.lower()[1:]
+        shown = f.stem if kind == "md" else f.name
+        stat = f.stat()
+        docs.append({"name": shown if f.parent.name == "ekip" else f"pazarlama/{shown}", "path": str(f), "kind": kind,
+                     "kb": round(stat.st_size / 1024, 1),
+                     "time": datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="minutes")})
+    return docs
+
+
+def team_file(path: str, project_paths: list[str]) -> Path | None:
+    """The file asked for, if it is one of the team's documents in a known project; nothing else is served."""
+    wanted = Path(path).resolve()
+    inside = any(wanted.is_relative_to((Path(p) / sub).resolve()) for p in project_paths for sub in DOC_DIRS)
+    return wanted if inside and wanted.suffix.lower() in DOC_TYPES and wanted.is_file() else None
+
+
 def describe_project(path: str) -> dict:
     """A quick look at the project for the dashboard: git state and the README's opening."""
     folder = Path(path)
@@ -931,12 +989,11 @@ def describe_project(path: str) -> dict:
             readme = (folder / name).read_text(encoding="utf-8", errors="replace")[:1200]
             break
     status = _git(path, "status", "--porcelain")
-    # The team's work papers (ekip/TERMINAL.md), newest first.
-    papers = sorted((folder / "docs" / "ekip").glob("*.md"), reverse=True)[:10]
-    docs = []
-    for paper in papers:
-        with contextlib.suppress(OSError):
-            docs.append({"name": paper.stem, "text": paper.read_text(encoding="utf-8", errors="replace")[:4000]})
+    docs = team_documents(folder)[:10]
+    for doc in docs:
+        if doc["kind"] == "md":
+            with contextlib.suppress(OSError):
+                doc["text"] = Path(doc["path"]).read_text(encoding="utf-8", errors="replace")[:20000]
     return {
         "name": folder.name or path,
         "path": path,
@@ -1135,6 +1192,18 @@ def main(argv: list[str] | None = None) -> None:
 
         return await web_search(gemini_key, config.gemini_model, question)
 
+    async def research(topic: str) -> dict:
+        from server.life import RESEARCH_PROMPT, web_search
+
+        return await web_search(gemini_key, config.gemini_model, topic, system=RESEARCH_PROMPT, links=True)
+
+    async def tell_cuba(text: str) -> None:
+        """Background work reaching Cuba: on the voice if the line is open, else on Telegram."""
+        if live is not None and live.active:
+            await live.tell(text)
+        elif telegram is not None:
+            await telegram.send(text)
+
     def notify(message: dict) -> None:
         if "app" in late:
             late["app"].state.notify(message)
@@ -1143,11 +1212,7 @@ def main(argv: list[str] | None = None) -> None:
     omni = ClaudeChat("haiku")
     if omni.available:
         # The marketing team's meetings on Claude Haiku; the app it reports through is made further down.
-        async def office_tell(text: str) -> None:
-            if live is not None and live.active:
-                await live.tell(text)
-            elif telegram is not None:
-                await telegram.send(text)
+        office_tell = tell_cuba
 
         async def office_push(folder: str) -> None:
             if "app" in late:
@@ -1163,7 +1228,7 @@ def main(argv: list[str] | None = None) -> None:
 
         return CubaTools(hand_over, press, MEMORY_DIR, projects=projects.listing, hire=hire, fire=fire,
                          life=life, search=search if gemini_key else None, notify=notify, schedule=schedule,
-                         office=office, phone=phone)
+                         office=office, phone=phone, research=research if gemini_key else None, tell=tell_cuba)
 
     def live_voice() -> str:
         return late["app"].state.settings()["live_voice"] if "app" in late else config.live_voice

@@ -141,6 +141,8 @@ async def test_work_goes_to_the_terminal_and_tools_answer(tmp_path):
     replies = next(m for m in google.sent if "toolResponse" in m)["toolResponse"]["functionResponses"]
     assert [r["id"] for r in replies] == ["1", "2", "3", "4", "5"]
     assert replies[0]["response"]["ok"] and "error" in replies[3]["response"]
+    # The handover says nothing exists yet, so Cuba does not claim a report or a document.
+    assert "Henüz hiçbir şey oluşmadı" in replies[0]["response"]["not"]
     # Two projects answer to "balbal": Cuba is told to ask, nothing is handed over.
     assert "Çağan'a sor" in replies[4]["response"]["error"]
     assert hub.handed == [(r"D:\web\balbalmedya", "Giriş sayfasını yap.")] and hub.pressed == ["\r"]
@@ -210,3 +212,58 @@ async def test_marketing_work_goes_to_the_terminal_subagent(tmp_path):
     assert result["ok"]
     assert handed[0][1] == "D:/site"
     assert "cuba-ekip:pazarlama" in handed[0][0] and "balbalmedya.com" in handed[0][0]
+
+
+async def test_research_writes_the_document_before_cuba_hears_of_it(tmp_path):
+    from server.live import CubaTools
+
+    async def nothing(*_):
+        return None
+
+    async def research(topic):
+        return {"cevap": "Özet: üç rakip var.", "adresler": [{"baslik": "a.com", "adres": "https://a.com"}]}
+
+    told, page = [], []
+
+    async def tell(text):
+        told.append(text)
+
+    tools = CubaTools(nothing, nothing, tmp_path, projects=lambda: {"projects": [{"name": "site", "path": str(tmp_path)}]},
+                      research=research, tell=tell, notify=page.append)
+    result = await tools.run("arastir", {"konu": "Çiçekçi rakipleri", "proje": "site"})
+    assert result["ok"] and "henüz belge yok" in result["not"]
+    assert page[0] == {"type": "job", "project": tmp_path.name, "state": "working", "text": "Çiçekçi rakipleri"}
+    for _ in range(50):
+        if told:
+            break
+        await asyncio.sleep(0.01)
+    [doc] = list((tmp_path / "pazarlama").glob("arastirma-*-cicekci-rakipleri.md"))
+    text = doc.read_text(encoding="utf-8")
+    assert text.startswith("# Çiçekçi rakipleri") and "[a.com](https://a.com)" in text
+    assert "[ARAŞTIRMA BİTTİ" in told[0] and f"Belge: pazarlama/{doc.name}" in told[0]
+    assert page[1]["state"] == "done" and page[1]["docs"][0]["ok"]
+
+
+async def test_failed_research_says_there_is_no_document(tmp_path):
+    from server.live import CubaTools
+
+    async def nothing(*_):
+        return None
+
+    async def research(topic):
+        return {"error": "Arama yapılamadı (ConnectError)."}
+
+    told = []
+
+    async def tell(text):
+        told.append(text)
+
+    tools = CubaTools(nothing, nothing, tmp_path, projects=lambda: {"projects": [{"name": "site", "path": str(tmp_path)}]},
+                      research=research, tell=tell)
+    await tools.run("arastir", {"konu": "x", "proje": "site"})
+    for _ in range(50):
+        if told:
+            break
+        await asyncio.sleep(0.01)
+    assert "[ARAŞTIRMA OLMADI" in told[0] and "Belge yok" in told[0]
+    assert not (tmp_path / "pazarlama").exists()

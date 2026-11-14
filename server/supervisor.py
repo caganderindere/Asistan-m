@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -38,6 +39,10 @@ Yalnızca söyleyeceğin metni yaz."""
 # Answers this short are Cuba's own words, read as written: nothing to summarize.
 BRIEF_CHARS = 350
 BRIEF_LINES = 4
+# A report naming a document it wrote is worth keeping, however short.
+DOC_PATH = re.compile(r"[\w./\-]+\.(?:md|pdf|html|csv|docx|json)\b", re.I)
+LIVE_HEAD = 1200  # a report's opening Cuba always hears: the summary and the document's path
+LIVE_CHARS = 4000
 
 AWAY_PROMPT = """Sen Cuba'sın: Çağan'ın takım liderisin. Çağan şu an yok (uyuyor ya da dışarıda) ve tüm
 yetkiyi sana verdi; hiçbir şeyi ona sorma, onun yerine sen karar ver. Geliştirici ekip (Claude Code)
@@ -65,7 +70,38 @@ Ask = Callable[[str, str, bool], Awaitable[str]]
 def is_brief(text: str) -> bool:
     """A plain short answer rather than a work report: no code, a few lines at most."""
     lines = [line for line in text.strip().splitlines() if line.strip()]
+    if DOC_PATH.search(text):
+        return False
     return "```" not in text and len(lines) <= BRIEF_LINES and len(text.strip()) <= BRIEF_CHARS
+
+
+def for_live(report: str) -> str:
+    """A report cut to what Cuba is told: its opening and its end, never just the end."""
+    if len(report) <= LIVE_CHARS:
+        return report
+    return f"{report[:LIVE_HEAD]}\n…\n{report[-(LIVE_CHARS - LIVE_HEAD):]}"
+
+
+DOC_LINE = re.compile(r"^\W*Belge:\s*`?([^`\n]+?)`?\s*$", re.M)
+
+
+def check_documents(report: str, folder: str | Path) -> list[dict]:
+    """The documents a report names on its `Belge:` lines, and whether each is really on disk."""
+    found = []
+    for wanted in DOC_LINE.findall(report):
+        path = Path(wanted.strip())
+        full = path if path.is_absolute() else Path(folder) / path
+        found.append({"name": wanted.strip(), "path": str(full), "ok": full.is_file(),
+                      "kb": round(full.stat().st_size / 1024, 1) if full.is_file() else 0})
+    return found
+
+
+def documents_note(docs: list[dict]) -> str:
+    """What Cuba is told about the named documents: checked by the server, not taken on trust."""
+    lines = [f"{d['name']}: var ({d['kb']} KB)" if d["ok"] else
+             f"{d['name']}: YOK, raporda adı geçiyor ama dosya bulunamadı; Çağan'a belge oluştu deme"
+             for d in docs]
+    return "\n[BELGE KONTROLÜ] " + "; ".join(lines) if lines else ""
 
 
 class Supervisor:

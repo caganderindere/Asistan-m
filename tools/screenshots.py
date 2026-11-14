@@ -70,19 +70,71 @@ OUTPUTS = {"type": "outputs", "items": [
     {"time": "10:41", "project": "magaza", "summary": "Kupon indirimi düzeltildi, 12 sepet testi geçiyor.",
      "report": "cart.py: indirim toplamdan sonra uygulanıyor…", "done": True},
 ]}
+RESEARCH = "D:\\demo\\magaza\\pazarlama\\arastirma-2026-11-14-online-cicekci-fiyatlari.md"
+DECK = "D:\\demo\\magaza\\pazarlama\\kis-kampanyasi-sunum.pptx"
+RESEARCH_TEXT = """# Online çiçekçi fiyatları
+
+Özet: İstanbul'da online çiçek siparişinde ortalama sepet 650–900 TL. Rakiplerin üçü aynı gün teslimatı ücretsiz \
+veriyor; mağazanın 79 TL teslimat ücreti sepette en çok terk edilen adım.
+
+## Bulgular
+| Rakip | Gül buketi (11) | Teslimat | Aynı gün |
+|---|---|---|---|
+| Çiçekevi | 749 TL | Ücretsiz | 15:00'e kadar |
+| BuketAl | 689 TL | 49 TL | 13:00'e kadar |
+| Lale&Co | 820 TL | Ücretsiz | 17:00'ye kadar |
+
+## Öneriler
+- 600 TL üstü siparişte teslimatı ücretsiz yap.
+- Aynı gün teslimat saatini ürün sayfasında göster.
+
+## Kaynaklar
+- [Çiçekevi](https://example.com/cicekevi)
+- [BuketAl](https://example.com/buketal)
+"""
+DOCS = [
+    {"name": "pazarlama/arastirma-2026-11-14-online-cicekci-fiyatlari", "path": RESEARCH, "kind": "md", "kb": 2.4,
+     "time": "2026-11-14T10:52", "project": "magaza"},
+    {"name": "pazarlama/kis-kampanyasi-sunum.pptx", "path": DECK, "kind": "pptx", "kb": 1840.2,
+     "time": "2026-11-14T10:20", "project": "magaza"},
+    {"name": "2026-11-14-kupon-indirimi", "path": "D:\\demo\\magaza\\docs\\ekip\\2026-11-14-kupon-indirimi.md",
+     "kind": "md", "kb": 3.1, "time": "2026-11-14T09:41", "project": "magaza"},
+    {"name": "pazarlama/hedef-kitle", "path": "D:\\demo\\blog\\pazarlama\\hedef-kitle.md", "kind": "md", "kb": 5.6,
+     "time": "2026-11-13T16:05", "project": "blog"},
+    {"name": "2026-11-12-push-bildirim", "path": "D:\\demo\\mobil\\docs\\ekip\\2026-11-12-push-bildirim.md",
+     "kind": "md", "kb": 4.0, "time": "2026-11-12T18:30", "project": "mobil-uygulama"},
+]
+# Work handed over, as the job cards under the orb show it: one running, two done with checked documents.
+JOB_CARDS = [
+    {"type": "job", "project": "blog", "state": "working", "text": "Bağımlılıkları güncelle, testleri çalıştır"},
+    {"type": "job", "project": "magaza", "state": "working", "text": "Online çiçekçi fiyatları"},
+    {"type": "job", "project": "magaza", "state": "done",
+     "docs": [{"name": "pazarlama/arastirma-2026-11-14-online-cicekci-fiyatlari.md", "path": RESEARCH, "ok": True, "kb": 2.4},
+              {"name": "pazarlama/kis-kampanyasi-sunum.pptx", "path": DECK, "ok": True, "kb": 1840.2}]},
+]
 API = {
     "/api/settings": {"live_voice": "Algenib", "voices": {"Algenib": "Kalın, pürüzlü — müdür sesi", "Charon": "Sakin"}},
-    "/api/memory": {"files": {"cagan.md": "", "bugun.md": "2026-11-13\n1. [ ] Mağaza testleri\n2. [ ] Sınav çalışması",
+    "/api/memory": {"files": {"cagan.md": "", "bugun.md": "2026-11-14\n1. [x] Mağaza testleri\n2. [ ] Sınav çalışması",
                               "gorevler.md": "", "takvim.md": "", "notlar.md": ""}, "diary": []},
     "/api/life": {"week": [], "situation": None},
     "/api/schedule": {"jobs": JOBS["jobs"]},
-    "/api/project": {"name": "magaza", "path": PROJECT},
+    "/api/project": {"name": "magaza", "path": PROJECT, "branch": "main", "changed": 2,
+                     "commits": [["12 dakika önce", "fix: kupon indirimi toplamdan sonra uygulanıyor"],
+                                 ["2 saat önce", "feat: aynı gün teslimat saati ürün sayfasında"]],
+                     "readme": "# Mağaza\nÇiçek ve hediye mağazası.", "docs": [{**d, "text": RESEARCH_TEXT} if d["kind"] == "md"
+                                                                       else d for d in DOCS[:3]]},
+    "/api/belgeler": {"docs": DOCS},
+    "/api/belge": {"name": "arastirma-2026-11-14-online-cicekci-fiyatlari.md", "text": RESEARCH_TEXT},
 }
+
+
+SOCKETS = []  # the page's socket, to send it more later, as the server would
 
 
 def on_ws(ws) -> None:
     if not ws.url.endswith("/ws"):
         return
+    SOCKETS.append(ws)
     for message in ({"type": "status", "state": "ok", "live": True}, PROJECTS,
                     {"type": "roster", "members": []}, CREW, CHAT, JOBS, OUTPUTS,
                     {"type": "usage", "claude": {"input": 182000, "output": 41000, "cache": 900000},
@@ -101,20 +153,50 @@ def serve(route) -> None:
     return route.fulfill(status=404, body="")
 
 
+def open_page(p, viewport: dict, **options):
+    """A page on the made-up server; the bundled Chromium is not installed, Edge is."""
+    browser = p.chromium.launch(channel="msedge")
+    context = browser.new_context(viewport=viewport, **options)
+    page = context.new_page()
+    page.route_web_socket("**/ws*", on_ws)
+    page.route(f"{BASE}/**", serve)
+    page.goto(BASE + "/")
+    page.wait_for_timeout(2500)
+    return browser, context, page
+
+
+def show_jobs(page) -> None:
+    """The job cards, as the server would send them over the socket."""
+    for card in JOB_CARDS:
+        SOCKETS[-1].send(json.dumps(card, ensure_ascii=False))
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    for old in OUT.glob("*.png"):
+        old.unlink()
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=1)
-        page.route_web_socket("**/ws*", on_ws)
-        page.route(f"{BASE}/**", serve)
-        page.goto(BASE + "/")
-        page.wait_for_timeout(2500)
+        browser, _, page = open_page(p, {"width": 1440, "height": 900}, device_scale_factor=2)
+        show_jobs(page)
+        page.wait_for_timeout(400)
+        page.screenshot(path=OUT / "asistan.png")
+        page.click("#tabOffice")
+        page.wait_for_timeout(2000)
         page.screenshot(path=OUT / "ofis.png")
-        for pane in ("talk", "schedule"):
+        for pane, name in (("talk", "konusma"), ("schedule", "zamanli"), ("docs", "belgeler"), ("project", "proje")):
             page.click(f'.side-tabs [data-pane="{pane}"]')
             page.wait_for_timeout(600)
-            page.locator("aside.side").screenshot(path=OUT / f"{ {'talk': 'konusma', 'schedule': 'zamanli'}[pane]}.png")
+            page.locator("aside.side").screenshot(path=OUT / f"{name}.png")
+        page.click('.side-tabs [data-pane="docs"]')
+        page.click(".doc-open >> nth=0")
+        page.wait_for_timeout(500)
+        page.locator("#docDialog").screenshot(path=OUT / "belge.png")
+        browser.close()
+        # The phone app (Tailscale + home screen): the assistant screen at iPhone size.
+        browser, _, page = open_page(p, {"width": 390, "height": 844}, device_scale_factor=3, is_mobile=True, has_touch=True)
+        show_jobs(page)
+        page.wait_for_timeout(400)
+        page.screenshot(path=OUT / "telefon.png")
         browser.close()
     print("\n".join(str(f) for f in sorted(OUT.glob("*.png"))))
 

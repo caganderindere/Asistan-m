@@ -52,6 +52,9 @@ Bölümler:
 `## Test raporu` bölümüne kendisi yazar.
 
 ## Konuşma ve rapor
+- Araştırma ve rapor işlerinin sonucu her zaman bir belgeye yazılır: pazarlama işi `pazarlama/`, öteki her şey `docs/ekip/` altına. Çağan bunları yalnızca bu iki klasörden okuyabilir; başka yere yazma. Bu klasörlerin içinde alt klasör açma: ekran yalnızca klasörün kendisindeki dosyaları gösterir (ham veri `pazarlama/veri/` istisnadır).
+- Sunum istenirse pptx skill'iyle `.pptx` hazırla; PDF, Word ya da Excel istenirse ilgili skill'le o dosyayı üret. Bunlar da aynı iki klasöre gider ve ekranda açılır.
+- Bir belge yazıldıysa son mesajının ilk satırı `Belge: <proje içindeki yolu>` olsun.
 - Türkçe ve kısa konuş. Söylediğin her şey Çağan'a sesli olarak özetleniyor.
 - Bir iş bitince son mesajında önce bir iki cümlelik özet ver: ne yapıldı, kim yaptı, test sonucu, açık kalan ne. Ayrıntıyı altına yaz; Çağan terminalden okur.
 - Hata ya da başarısız testi gizleme. Çağan'ın kararı gereken bir şey varsa açıkça sor.

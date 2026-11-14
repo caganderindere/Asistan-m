@@ -84,6 +84,19 @@ LIVE_TOOLS = [{"functionDeclarations": [
         "parameters": {"type": "object", "properties": {"soru": {"type": "string"}}, "required": ["soru"]},
     },
     {
+        "name": "arastir",
+        "description": "Bir konuyu Google'da araştırıp projenin pazarlama/ klasörüne araştırma belgesi yazar; "
+                       "arka planda çalışır, bitince [ARAŞTIRMA BİTTİ] gelir.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "konu": {"type": "string", "description": "Ne araştırılacak; Çağan'ın istediği her ayrıntıyla."},
+                "proje": {"type": "string", "description": "Belgenin yazılacağı proje; söylenmediyse boş bırak."},
+            },
+            "required": ["konu"],
+        },
+    },
+    {
         "name": "ise_al",
         "description": "Ekibe yeni bir üye alır: kendi masası, sesi ve uzmanlığı olan yeni bir alt ajan.",
         "parameters": {
@@ -247,6 +260,17 @@ def find_project(listing: dict, wanted: str) -> str | None:
     return close[0] if len(close) == 1 else None
 
 
+NOT_YET = "Henüz hiçbir şey oluşmadı, ekip çalışıyor. [EKİP RAPORU] gelmeden bitti, oluştu ya da hazır deme."
+TR_ASCII = str.maketrans("çğıöşüâî", "cgiosuai")
+
+
+def research_path(folder: str | Path, topic: str, today: datetime.date | None = None) -> Path:
+    """Where a research document goes: the project's pazarlama/ folder, dated, named after the topic."""
+    slug = "".join(c if c.isalnum() else "-" for c in topic.casefold().translate(TR_ASCII))
+    slug = "-".join(part for part in slug.split("-") if part)[:50].rstrip("-") or "konu"
+    return Path(folder) / "pazarlama" / f"arastirma-{(today or datetime.date.today()).isoformat()}-{slug}.md"
+
+
 Hand = Callable[[str, str], Awaitable[None]]  # gives the terminal's Claude an instruction, in a project folder
 Keys = Callable[[str], None]  # presses keys in the terminal
 
@@ -269,7 +293,12 @@ class CubaTools:
         schedule: Schedule | None = None,
         office=None,
         phone=None,
+        research: Callable[[str], Awaitable[dict]] | None = None,
+        tell: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
+        self._research = research  # Gemini with Google Search: a document without Claude tokens
+        self._studies: set[asyncio.Task] = set()
+        self._tell = tell  # tells Cuba later, on the voice or Telegram, that background work finished
         self._hand_over = hand_over
         self.phone = phone  # server/phone.py: rings Çağan
         self.office = office  # server/office.py: the marketing team on the free models
@@ -304,7 +333,32 @@ class CubaTools:
         # Marketing works as a Claude Code subagent in the terminal: real web, files and skills.
         who = str(args.get("kim", "")).strip()
         await self._hand_over(f"Bu iş `cuba-ekip:{who}` üyesinin; Agent aracıyla ona ver.\n\n{str(args['talimat']).strip()}", folder)
-        return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+        return self._started(folder, str(args["talimat"]))
+
+    def _started(self, folder: str, what: str) -> dict:
+        """Work handed over: the page shows a job card until the report comes."""
+        self._notify({"type": "job", "project": Path(folder).name, "state": "working", "text": what.strip()[:90]})
+        return {"ok": True, "proje": folder, "not": NOT_YET}
+
+    async def _study(self, folder: str, topic: str) -> None:
+        """Research in the background; Cuba hears of the document only once it is on disk."""
+        project = Path(folder).name
+        result = await self._research(topic)
+        docs = []
+        if "error" in result or not result.get("cevap"):
+            told = f"[ARAŞTIRMA OLMADI — {project}] {result.get('error', 'Sonuç boş geldi.')} Belge yok."
+        else:
+            path = research_path(folder, topic)
+            sources = "\n".join(f"- [{s['baslik'] or s['adres']}]({s['adres']})" for s in result.get("adresler", []))
+            text = f"# {topic}\n\n{result['cevap']}\n" + (f"\n## Kaynaklar\n{sources}\n" if sources else "")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            name = path.relative_to(folder).as_posix()
+            docs = [{"name": name, "path": str(path), "ok": True, "kb": round(path.stat().st_size / 1024, 1)}]
+            told = f"[ARAŞTIRMA BİTTİ — {project}]\nBelge: {name} (sunucu yazdı, var)\n{result['cevap'][:1500]}"
+        self._notify({"type": "job", "project": project, "state": "done", "docs": docs})
+        if self._tell is not None:
+            await self._tell(told)
 
     async def _branch(self, name: str, args: dict) -> dict:
         listing = self.projects()
@@ -338,7 +392,19 @@ class CubaTools:
                     names = ", ".join(p["name"] for p in listing.get("projects", []))
                     return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
                 await self._hand_over(str(args["talimat"]).strip(), folder)
-                return {"ok": True, "proje": folder, "not": "Ekip işe başladı; bitince [EKİP RAPORU] gelecek."}
+                return self._started(folder, str(args["talimat"]))
+            if name == "arastir" and self._research is not None and str(args.get("konu", "")).strip():
+                listing = self.projects()
+                wanted = str(args.get("proje", "")).strip()
+                folder = find_project(listing, wanted) if wanted else listing.get("current")
+                if folder is None:
+                    names = ", ".join(p["name"] for p in listing.get("projects", []))
+                    return {"error": f"Hangi proje olduğu belli değil. Çağan'a sor. Projeler: {names}"}
+                task = asyncio.create_task(self._study(folder, str(args["konu"]).strip()))
+                self._studies.add(task)  # held until done, or asyncio may drop it mid-way
+                task.add_done_callback(self._studies.discard)
+                started = self._started(folder, str(args["konu"]))
+                return {**started, "not": "Araştırma başladı, henüz belge yok. [ARAŞTIRMA BİTTİ] gelmeden hazır deme."}
             if name in ("ekibe_ver", "toplanti_ac", "soz_ver", "toplanti_kapat"):
                 return await self._office(name, args)
             if name in ("is_dallari", "dal_fark", "dal_birlestir", "dal_at"):
@@ -607,4 +673,4 @@ def _summary(name: str, args: dict) -> str:
         return f"{args.get('proje', '')}: {args.get('talimat', '')}"[:80]
     if name == "komut":
         return " ".join([str(args.get("program", "")), *map(str, args.get("args", []))])[:80]
-    return str(args.get("ad") or args.get("tus") or "")
+    return str(args.get("ad") or args.get("tus") or args.get("konu") or "")[:80]
